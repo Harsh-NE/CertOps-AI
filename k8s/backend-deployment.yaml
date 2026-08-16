@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cert-platform-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: cert-platform-backend }
+  template:
+    metadata:
+      labels: { app: cert-platform-backend }
+    spec:
+      containers:
+        - name: backend
+          image: your-registry/cert-platform-backend:latest
+          ports: [{ containerPort: 8000 }]
+          envFrom:
+            - secretRef: { name: cert-platform-secrets }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cert-platform-backend
+spec:
+  selector: { app: cert-platform-backend }
+  ports: [{ port: 8000, targetPort: 8000 }]

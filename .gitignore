@@ -1,0 +1,23 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.db
+backend/certplatform.db
+backend/app/ml_models/*.joblib
+
+# Node
+node_modules/
+frontend/dist/
+
+# Env
+.env
+backend/.env
+
+# Lab certs (regenerate locally, don't commit private keys)
+lab/certs/
+lab/nginx/rootCA.pem
+
+# OS
+.DS_Store
+SETUP.md

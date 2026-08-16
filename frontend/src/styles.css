@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+
+.card {
+  @apply bg-panel border border-border rounded-xl p-5;
+}
+.badge {
+  @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium;
+}
+.badge-low { @apply bg-accent2/10 text-accent2 border border-accent2/30; }
+.badge-medium { @apply bg-warn/10 text-warn border border-warn/30; }
+.badge-high { @apply bg-danger/10 text-danger border border-danger/30; }
+.badge-critical { @apply bg-danger/20 text-danger border border-danger/50; }
+.badge-neutral { @apply bg-muted/10 text-muted border border-muted/30; }
