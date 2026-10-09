@@ -5,7 +5,8 @@ owning team without a separate lookup.
 """
 import base64
 import json
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 from app.config import settings
 
 

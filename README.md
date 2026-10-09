@@ -1,4 +1,4 @@
-# AI-Driven Certificate Lifecycle Management Platform
+# CertOps AI: certificate lifecycle management platform
 
 An agentic-AI platform for enterprise SSL/TLS certificate management:
 **discovery → chain/revocation validation → ownership mapping → ML-based
@@ -6,6 +6,32 @@ risk prediction → AI agent (root-cause + Q&A) → auto-renewal → dashboard.*
 
 Built for a security-automation / platform-engineering / SRE portfolio
 project — but structured like a real production service, not a toy script.
+
+> **Project status (honest):** this is a work in progress, being completed in phases. The table
+> below describes the *target*; see **Current status** for what is verified today.
+
+## Current status
+
+| Area | Status |
+|---|---|
+| Network TLS scan, expiry, key size/algorithm, signature algorithm | Working (tested against local TLS servers) |
+| Chain / trust validation, revocation | **Not implemented yet** (`chain_valid` is reported as unknown, never as valid). Phase 2 |
+| AWS ACM / Azure Key Vault / GCP / Kubernetes discovery | Code exists, **untested** end to end. Phase 2 |
+| Risk model | Trains on **synthetic** data; no real-world accuracy claim. Phase 3 |
+| LangChain agent | Tools work; the LLM loop is untested. Phase 4 |
+| Renewal | Dry-run by default; a real renewal needs `confirm=true`. Let's Encrypt/Vault flows are unverified. Phase 4 |
+
+## Quick start
+
+```bash
+cp .env.example .env        # then set SECRET_KEY, ADMIN_PASSWORD and POSTGRES_PASSWORD
+docker compose up --build   # UI http://localhost:3000, API http://localhost:8000/docs
+```
+
+Without Docker (Windows): `powershell -ExecutionPolicy Bypass -File scripts/dev.ps1`.
+Tests: `cd backend && pip install -r requirements-dev.txt -c constraints.txt && pytest`.
+Sign in with `ADMIN_USERNAME` / `ADMIN_PASSWORD` from `.env`. Self-registration is off unless `ALLOW_REGISTRATION=true`
+(and only creates read-only users).
 
 ## What it does
 
@@ -62,13 +88,10 @@ cert-platform/
 └── README.md           <- you are here
 ```
 
-## No enterprise certificates? Use the built-in lab
+## Lab environment
 
-You don't need real infrastructure to try this out. `lab/` generates a
-private Root CA → Intermediate CA → leaf certificate chain and serves five
-test endpoints via nginx, each with a different risk profile (healthy,
-expiring soon, expired, weak crypto, multi-SAN). See **SETUP.md → "Try it
-without real infrastructure"**.
+`lab/` (openssl CA + nginx) is **currently out of sync**: `generate_certs.sh` creates `app1`-`app5` while the nginx
+configs and `seed_lab_data.py` expect `legacy` and `api`. It is replaced by generated test fixtures in Phase 2.
 
 ## Using the AI agent
 
@@ -93,7 +116,3 @@ day one. Once you have real history (in the `scan_logs` / `renewal_tasks`
 tables), swap `generate_synthetic_dataset()` for a query against those
 tables and re-run the training script — the feature set (`FEATURE_ORDER` in
 `risk_ml.py`) stays the same.
-
-## Full setup instructions
-
-See **[SETUP.md](./SETUP.md)** for step-by-step local, Docker, and lab-environment setup.

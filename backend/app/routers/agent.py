@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.database import get_db
 from app import schemas
 from app.auth import get_current_user
+from app.database import get_db
 from app.services.ai_agent.agent import run_agent_query
 
 router = APIRouter(prefix="/api/agent", tags=["ai agent"])

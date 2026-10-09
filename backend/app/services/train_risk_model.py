@@ -15,14 +15,15 @@ swapping `generate_synthetic_dataset()` for a query against `scan_logs` /
 `renewal_tasks`.
 """
 import os
+
+import joblib
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegressor
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, mean_absolute_error
-import joblib
+from sklearn.model_selection import train_test_split
 
-from app.services.risk_ml import FEATURE_ORDER, MODEL_DIR, CLASSIFIER_PATH, REGRESSOR_PATH
+from app.services.risk_ml import CLASSIFIER_PATH, FEATURE_ORDER, MODEL_DIR, REGRESSOR_PATH
 
 RNG = np.random.default_rng(42)
 

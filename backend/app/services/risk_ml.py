@@ -14,11 +14,12 @@ persisted to backend/app/ml_models/*.joblib. If no trained model is found,
 API never breaks on a fresh checkout.
 """
 import os
-from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Any, Dict
 
 import joblib
 import numpy as np
+
+from app.timeutil import days_until
 
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "ml_models")
 CLASSIFIER_PATH = os.path.join(MODEL_DIR, "risk_classifier.joblib")
@@ -58,8 +59,7 @@ def extract_features(cert: Dict[str, Any]) -> Dict[str, float]:
     not_after = g("not_after")
     days_to_expiry = 9999
     if not_after:
-        na = not_after.replace(tzinfo=None) if getattr(not_after, "tzinfo", None) else not_after
-        days_to_expiry = (na - datetime.utcnow()).days
+        days_to_expiry = days_until(not_after)
 
     sig_algo = (g("signature_algorithm") or "").lower()
     weak_sig = 1.0 if any(w in sig_algo for w in ("sha1", "md5")) else 0.0
@@ -153,7 +153,7 @@ def score_certificate(cert: Dict[str, Any]) -> Dict[str, Any]:
     tier = classifier.classes_[tier_idx]
     # Map tier probabilities to a continuous 0-100 score for the dashboard
     tier_weight = {"low": 10, "medium": 40, "high": 70, "critical": 95}
-    risk_score = float(sum(p * tier_weight.get(c, 50) for p, c in zip(proba, classifier.classes_)))
+    risk_score = float(sum(p * tier_weight.get(c, 50) for p, c in zip(proba, classifier.classes_, strict=False)))
 
     delay_days = float(max(0.0, regressor.predict(X)[0]))
     d = features["days_to_expiry"]

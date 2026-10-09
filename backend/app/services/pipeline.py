@@ -7,20 +7,19 @@ and the scheduler call so behavior stays identical whether a scan is
 triggered manually or automatically.
 """
 import json
-from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 from sqlalchemy.orm import Session
 
 from app import models
 from app.config import settings
-from app.services.cert_scanner import scan_target, days_until_expiry, CertScanError
-from app.services.chain_validator import validate_chain, evaluate_weak_crypto
-from app.services.ownership_discovery import resolve_owner
-from app.services.risk_ml import score_certificate
+from app.services.cert_scanner import days_until_expiry, scan_target
+from app.services.chain_validator import validate_chain
 from app.services.notifications.slack import send_slack_alert
 from app.services.notifications.teams import send_teams_alert
-from app.services.notifications.jira import create_renewal_ticket
+from app.services.ownership_discovery import resolve_owner
+from app.services.risk_ml import score_certificate
+from app.timeutil import to_naive_utc, utcnow
 
 
 def _get_or_create_owner(db: Session, owner_info: Dict[str, Any]) -> models.Owner:
@@ -34,6 +33,9 @@ def _get_or_create_owner(db: Session, owner_info: Dict[str, Any]) -> models.Owne
 
 
 def _upsert_certificate(db: Session, data: Dict[str, Any]) -> models.Certificate:
+    for k in ("not_before", "not_after"):
+        if k in data:
+            data[k] = to_naive_utc(data[k])
     existing = db.query(models.Certificate).filter(
         models.Certificate.source_ref == data.get("source_ref")
     ).first()
@@ -42,12 +44,12 @@ def _upsert_certificate(db: Session, data: Dict[str, Any]) -> models.Certificate
         for k, v in data.items():
             if hasattr(existing, k) and k not in ("id",):
                 setattr(existing, k, v)
-        existing.last_scanned_at = datetime.utcnow()
+        existing.last_scanned_at = utcnow()
         cert = existing
     else:
         allowed = {c.name for c in models.Certificate.__table__.columns}
         clean = {k: v for k, v in data.items() if k in allowed}
-        clean["last_scanned_at"] = datetime.utcnow()
+        clean["last_scanned_at"] = utcnow()
         cert = models.Certificate(**clean)
         db.add(cert)
 
@@ -76,6 +78,7 @@ def process_discovered_certificate(
 
     # --- Status + risk scoring ---
     _rescore(db, cert)
+    _alert_if_critical(cert)
 
     db.commit()
     db.refresh(cert)
@@ -103,7 +106,6 @@ def scan_and_process_network_target(db: Session, target: str) -> models.Certific
 
 def _rescore(db: Session, cert: models.Certificate):
     """Recompute status + ML risk score/tier for a certificate and persist it."""
-    now = datetime.utcnow()
     d = days_until_expiry(cert.not_after) if cert.not_after else None
 
     if cert.revoked:
@@ -125,7 +127,10 @@ def _rescore(db: Session, cert: models.Certificate):
     cert.predicted_renewal_delay_days = score["predicted_renewal_delay_days"]
     cert.predicted_outage_impact = score["predicted_outage_impact"]
 
-    # --- Alerting on critical thresholds ---
+
+def _alert_if_critical(cert: models.Certificate):
+    """Alerts only from scan/discovery runs, not from the hourly re-score (avoids hourly spam)."""
+    d = days_until_expiry(cert.not_after) if cert.not_after else None
     if d is not None and d <= settings.EXPIRY_CRITICAL_DAYS:
         msg = (f":rotating_light: Certificate *{cert.common_name}* expires in {d} day(s) "
                f"(risk tier: {cert.risk_tier.value}). Source: {cert.source_ref}")

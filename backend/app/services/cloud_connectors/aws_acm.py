@@ -8,13 +8,16 @@ connector returns an empty list rather than raising, so discovery jobs that
 mix multiple cloud providers don't fail entirely because one isn't set up.
 """
 import json
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 from app.config import settings
 
 
 def _client():
     import boto3
     kwargs = {"region_name": settings.AWS_REGION}
+    if settings.AWS_ENDPOINT_URL:
+        kwargs["endpoint_url"] = settings.AWS_ENDPOINT_URL
     if settings.AWS_ACCESS_KEY_ID and settings.AWS_SECRET_ACCESS_KEY:
         kwargs["aws_access_key_id"] = settings.AWS_ACCESS_KEY_ID
         kwargs["aws_secret_access_key"] = settings.AWS_SECRET_ACCESS_KEY
@@ -22,6 +25,8 @@ def _client():
 
 
 def discover_certificates() -> List[Dict[str, Any]]:
+    if not settings.AWS_DISCOVERY_ENABLED:
+        return []  # opt-in: boto3 would otherwise pick up ambient ~/.aws credentials
     try:
         client = _client()
     except Exception as e:
@@ -54,17 +59,19 @@ def discover_certificates() -> List[Dict[str, Any]]:
 
 def request_renewal(certificate_arn: str) -> Dict[str, Any]:
     """
-    ACM auto-renews eligible (DNS-validated, in-use) certs automatically -
-    there's no manual "renew now" API. This triggers a validation-status
-    refresh so the platform can confirm renewal eligibility and surface it.
+    ACM renews eligible (DNS-validated, in-use) certificates by itself and has no
+    "renew now" API, so this never performs a renewal. It reports eligibility only
+    and returns success=False so callers do not record a renewal that didn't happen.
     """
     try:
         client = _client()
         detail = client.describe_certificate(CertificateArn=certificate_arn)["Certificate"]
         return {
-            "success": True,
+            "success": False,
+            "action_taken": False,
+            "error": "ACM manages renewal itself; the platform cannot force it.",
             "renewal_eligible": detail.get("RenewalEligibility") == "ELIGIBLE",
             "renewal_summary": detail.get("RenewalSummary"),
         }
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "action_taken": False, "error": str(e)}

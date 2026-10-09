@@ -1,0 +1,7 @@
+line-length = 140
+target-version = "py312"
+extend-exclude = [".venv", "venv", "alembic/versions"]
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["B008", "UP006", "UP007", "UP035"]  # FastAPI Depends(); typing style kept as-is

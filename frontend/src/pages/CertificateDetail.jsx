@@ -44,16 +44,26 @@ export default function CertificateDetail() {
     } finally { setBusy(false) }
   }
 
+  // Dry-run first (changes nothing); a real renewal needs an explicit confirmation.
   async function renewNow() {
     setBusy(true)
     try {
-      const res = await api.post(`/renewals/${id}/renew-now`)
+      const dry = await api.post(`/renewals/${id}/renew-now`, null, { params: { dry_run: true } })
+      const proceed = window.confirm(`${dry.data.notes}
+
+Perform the REAL renewal now?`)
+      if (!proceed) {
+        setMsg({ ok: true, text: 'Dry run recorded. No changes made.' })
+        return
+      }
+      const res = await api.post(`/renewals/${id}/renew-now`, null, { params: { dry_run: false, confirm: true } })
       setMsg({ ok: res.data.status !== 'failed', text: `Renewal attempt: ${res.data.status}` })
       load()
     } catch (e) {
       setMsg({ ok: false, text: e.response?.data?.detail || 'Renewal failed' })
     } finally { setBusy(false) }
   }
+
 
   if (!cert) return <p className="text-muted">Loading…</p>
 
@@ -80,7 +90,7 @@ export default function CertificateDetail() {
         </button>
         {cert.renewal_provider && (
           <button onClick={renewNow} disabled={busy} className="flex items-center gap-1.5 bg-accent text-bg font-medium rounded-lg px-3 py-2 text-sm hover:opacity-90 transition">
-            <Zap size={14} /> Renew now via {cert.renewal_provider}
+            <Zap size={14} /> Renew via {cert.renewal_provider} (dry run first)
           </button>
         )}
       </div>

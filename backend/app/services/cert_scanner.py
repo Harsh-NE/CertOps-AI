@@ -7,15 +7,19 @@ Pure-Python via the standard `ssl` module + `cryptography` for parsing, so it
 has no external service dependency and works the moment you install
 requirements.txt.
 """
+import hashlib
+import json
 import socket
 import ssl
-import json
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List
 
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
-from cryptography.x509.oid import NameOID, ExtensionOID
+from cryptography.hazmat.primitives.asymmetric import ec, ed448, ed25519, rsa
+from cryptography.x509.oid import ExtensionOID, NameOID
+
+from app.timeutil import days_until, to_naive_utc
 
 
 class CertScanError(Exception):
@@ -57,10 +61,16 @@ def parse_certificate(der_bytes: bytes) -> Dict[str, Any]:
         except IndexError:
             return None
 
-    try:
-        key_size = cert.public_key().key_size
-    except Exception:
-        key_size = None
+    pub = cert.public_key()
+    key_size = getattr(pub, "key_size", None)
+    if isinstance(pub, rsa.RSAPublicKey):
+        key_algorithm = "RSA"
+    elif isinstance(pub, ec.EllipticCurvePublicKey):
+        key_algorithm = "EC"
+    elif isinstance(pub, ed25519.Ed25519PublicKey | ed448.Ed448PublicKey):
+        key_algorithm = "Ed25519" if isinstance(pub, ed25519.Ed25519PublicKey) else "Ed448"
+    else:
+        key_algorithm = type(pub).__name__
 
     return {
         "common_name": _name(NameOID.COMMON_NAME, cert.subject) or (sans[0] if sans else "unknown"),
@@ -68,10 +78,13 @@ def parse_certificate(der_bytes: bytes) -> Dict[str, Any]:
         "issuer": cert.issuer.rfc4514_string(),
         "serial_number": str(cert.serial_number),
         "signature_algorithm": cert.signature_algorithm_oid._name,
+        "key_algorithm": key_algorithm,
         "key_size": key_size,
-        "not_before": cert.not_valid_before_utc if hasattr(cert, "not_valid_before_utc") else cert.not_valid_before,
-        "not_after": cert.not_valid_after_utc if hasattr(cert, "not_valid_after_utc") else cert.not_valid_after,
+        "not_before": to_naive_utc(cert.not_valid_before_utc),
+        "not_after": to_naive_utc(cert.not_valid_after_utc),
         "san_list": json.dumps(sans),
+        "is_wildcard": any(n.startswith("*.") for n in sans),
+        "fingerprint_sha256": hashlib.sha256(der_bytes).hexdigest(),
     }
 
 
@@ -84,10 +97,10 @@ def scan_target(target: str) -> Dict[str, Any]:
     host, port = _parse_target(target)
     try:
         der = fetch_leaf_certificate_der(host, port)
-    except (socket.timeout, socket.gaierror, ConnectionRefusedError, OSError) as e:
-        raise CertScanError(f"Could not connect to {host}:{port} - {e}")
+    except (TimeoutError, socket.gaierror, ConnectionRefusedError, OSError) as e:
+        raise CertScanError(f"Could not connect to {host}:{port} - {e}") from e
     except ssl.SSLError as e:
-        raise CertScanError(f"TLS handshake failed for {host}:{port} - {e}")
+        raise CertScanError(f"TLS handshake failed for {host}:{port} - {e}") from e
 
     data = parse_certificate(der)
     data["source_ref"] = f"{host}:{port}"
@@ -95,8 +108,4 @@ def scan_target(target: str) -> Dict[str, Any]:
 
 
 def days_until_expiry(not_after: datetime) -> int:
-    if not_after.tzinfo is not None:
-        now = datetime.now(not_after.tzinfo)
-    else:
-        now = datetime.utcnow()
-    return (not_after - now).days
+    return days_until(not_after)

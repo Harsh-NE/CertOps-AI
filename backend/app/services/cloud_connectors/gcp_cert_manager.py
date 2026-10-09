@@ -4,7 +4,8 @@ Requires GCP_PROJECT_ID and GOOGLE_APPLICATION_CREDENTIALS pointing at a
 service-account JSON key (standard ADC pattern).
 """
 import json
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 from app.config import settings
 
 

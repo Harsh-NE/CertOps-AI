@@ -1,12 +1,11 @@
 import enum
 import uuid
-from datetime import datetime
 
-from sqlalchemy import (
-    Column, String, DateTime, Integer, Float, Boolean, ForeignKey, Text, Enum
-)
+from sqlalchemy import Boolean, Column, DateTime, Enum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
+
 from app.database import Base
+from app.timeutil import utcnow
 
 
 def gen_uuid():
@@ -54,21 +53,27 @@ class Certificate(Base):
     __tablename__ = "certificates"
     id = Column(String, primary_key=True, default=gen_uuid)
 
+    # Identity: SHA-256 of the DER bytes when known; source+source_ref locate it in its provider.
+    fingerprint_sha256 = Column(String, index=True, nullable=True)
     common_name = Column(String, index=True, nullable=False)
     san_list = Column(Text, nullable=True)  # JSON-encoded list
     issuer = Column(String, nullable=True)
     subject = Column(String, nullable=True)
     serial_number = Column(String, nullable=True)
     signature_algorithm = Column(String, nullable=True)
+    key_algorithm = Column(String, nullable=True)  # RSA | EC | Ed25519 ...
     key_size = Column(Integer, nullable=True)
+    is_wildcard = Column(Boolean, default=False)
+    chain_depth = Column(Integer, nullable=True)  # certs presented/validated, leaf included
+    environment = Column(String, index=True, nullable=True)  # prod | staging | dev ... (from tags/labels)
 
     not_before = Column(DateTime, nullable=True)
     not_after = Column(DateTime, nullable=True)
 
     source = Column(Enum(SourceType), default=SourceType.NETWORK_SCAN)
-    source_ref = Column(String, nullable=True)  # ARN / vault URL / secret name / host:port
+    source_ref = Column(String, index=True, nullable=True)  # ARN / vault URL / secret name / host:port
 
-    chain_valid = Column(Boolean, default=None, nullable=True)
+    chain_valid = Column(Boolean, default=None, nullable=True)  # None = not validated (yet)
     revoked = Column(Boolean, default=None, nullable=True)
     revocation_check_method = Column(String, nullable=True)  # OCSP | CRL | none
 
@@ -85,8 +90,8 @@ class Certificate(Base):
     owner_id = Column(String, ForeignKey("owners.id"), nullable=True)
     owner = relationship("Owner", back_populates="certificates")
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
     last_scanned_at = Column(DateTime, nullable=True)
 
     renewal_tasks = relationship("RenewalTask", back_populates="certificate")
@@ -100,6 +105,8 @@ class RenewalTaskStatus(str, enum.Enum):
     AUTO_RENEWED = "auto_renewed"
     COMPLETED = "completed"
     FAILED = "failed"
+    SKIPPED = "skipped"  # nothing was done (e.g. provider cannot force renewal)
+    DRY_RUN = "dry_run"  # simulated only, no change made
 
 
 class RenewalTask(Base):
@@ -112,7 +119,11 @@ class RenewalTask(Base):
     jira_ticket_key = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
     triggered_by = Column(String, default="scheduler")  # scheduler | agent | manual
-    created_at = Column(DateTime, default=datetime.utcnow)
+    provider = Column(String, nullable=True)  # letsencrypt | vault | aws_acm | jira
+    dry_run = Column(Boolean, default=False)
+    previous_serial = Column(String, nullable=True)
+    new_serial = Column(String, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
     completed_at = Column(DateTime, nullable=True)
 
 
@@ -125,7 +136,7 @@ class ScanLog(Base):
     target = Column(String, nullable=False)
     success = Column(Boolean, default=True)
     message = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
 
 class User(Base):
@@ -134,4 +145,4 @@ class User(Base):
     username = Column(String, unique=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     role = Column(String, default="viewer")  # admin | operator | viewer
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)

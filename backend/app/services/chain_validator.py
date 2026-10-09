@@ -4,9 +4,9 @@ checks basic constraints on intermediates, and performs revocation checks
 via OCSP (CRL fallback stub included). Also flags weak signature algorithms
 and undersized keys.
 """
-import ssl
 import socket
-from typing import Dict, Any, List, Optional
+import ssl
+from typing import Any, Dict, List, Optional
 
 import requests
 from cryptography import x509
@@ -57,8 +57,8 @@ def check_ocsp_status(cert_der: bytes, issuer_der: bytes, timeout: float = 5.0) 
     responder cannot be reached - this must never crash the scan pipeline.
     """
     try:
-        from cryptography.x509.ocsp import OCSPRequestBuilder
         from cryptography.hazmat.primitives.hashes import SHA1
+        from cryptography.x509.ocsp import OCSPRequestBuilder
 
         cert = x509.load_der_x509_certificate(cert_der, default_backend())
         issuer = x509.load_der_x509_certificate(issuer_der, default_backend())
@@ -77,7 +77,6 @@ def check_ocsp_status(cert_der: bytes, issuer_der: bytes, timeout: float = 5.0) 
 
         builder = OCSPRequestBuilder().add_certificate(cert, issuer, SHA1())
         req = builder.build()
-        req_der = req.public_bytes(ssl.Encoding.DER) if hasattr(req, "public_bytes") else None
 
         resp = requests.post(
             ocsp_urls[0],
@@ -85,7 +84,7 @@ def check_ocsp_status(cert_der: bytes, issuer_der: bytes, timeout: float = 5.0) 
             headers={"Content-Type": "application/ocsp-request"},
             timeout=timeout,
         )
-        from cryptography.x509.ocsp import load_der_ocsp_response, OCSPCertStatus
+        from cryptography.x509.ocsp import OCSPCertStatus, load_der_ocsp_response
         ocsp_resp = load_der_ocsp_response(resp.content)
         revoked = ocsp_resp.certificate_status == OCSPCertStatus.REVOKED
         return {"checked": True, "revoked": revoked, "responder": ocsp_urls[0]}
@@ -114,9 +113,9 @@ def validate_chain(host: str, port: int = 443) -> Dict[str, Any]:
         return result
 
     result["chain_length"] = len(chain)
-    # A server presenting at least leaf + 1 intermediate is considered a
-    # complete-enough chain for validation purposes in this lab/demo scope.
-    result["chain_valid"] = len(chain) >= 1
+    # Trust-path validation is not implemented yet (Phase 2). Report "unknown"
+    # rather than claiming a chain is valid just because one was presented.
+    result["chain_valid"] = None
 
     if len(chain) >= 2:
         result["revocation"] = check_ocsp_status(chain[0], chain[1])

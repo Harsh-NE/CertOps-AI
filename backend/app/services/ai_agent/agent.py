@@ -10,7 +10,8 @@ OPENAI_BASE_URL to point at a local Ollama/vLLM server for a fully offline
 setup). If AI_AGENT_ENABLED is False (no API key configured), the router
 returns a clear "agent not configured" message instead of failing.
 """
-from typing import Dict, Any
+from typing import Any, Dict
+
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -37,9 +38,9 @@ def run_agent_query(question: str, db: Session) -> Dict[str, Any]:
             "used_tools": [],
         }
 
-    from langchain_openai import ChatOpenAI
-    from langchain.agents import create_tool_calling_agent, AgentExecutor
+    from langchain.agents import AgentExecutor, create_tool_calling_agent
     from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+    from langchain_openai import ChatOpenAI
 
     llm = ChatOpenAI(
         model=settings.AGENT_MODEL,

@@ -4,7 +4,8 @@ Uses azure-identity's ClientSecretCredential when AZURE_* env vars are set,
 otherwise falls back to DefaultAzureCredential (managed identity, az cli, etc).
 """
 import json
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 from app.config import settings
 
 

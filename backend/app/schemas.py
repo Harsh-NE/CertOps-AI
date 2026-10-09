@@ -1,5 +1,6 @@
 from datetime import datetime
-from typing import Optional, List
+from typing import List, Optional
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -13,6 +14,13 @@ class OwnerOut(BaseModel):
     source: Optional[str] = None
 
 
+class OwnerCreate(BaseModel):
+    name: str
+    team: Optional[str] = None
+    email: Optional[str] = None
+    slack_channel: Optional[str] = None
+
+
 class CertificateBase(BaseModel):
     common_name: str
     issuer: Optional[str] = None
@@ -20,7 +28,12 @@ class CertificateBase(BaseModel):
     not_before: Optional[datetime] = None
     not_after: Optional[datetime] = None
     signature_algorithm: Optional[str] = None
+    key_algorithm: Optional[str] = None
     key_size: Optional[int] = None
+    is_wildcard: Optional[bool] = None
+    chain_depth: Optional[int] = None
+    environment: Optional[str] = None
+    fingerprint_sha256: Optional[str] = None
 
 
 class CertificateOut(CertificateBase):
@@ -60,6 +73,10 @@ class RenewalTaskOut(BaseModel):
     jira_ticket_key: Optional[str] = None
     notes: Optional[str] = None
     triggered_by: str
+    provider: Optional[str] = None
+    dry_run: Optional[bool] = None
+    previous_serial: Optional[str] = None
+    new_serial: Optional[str] = None
     created_at: datetime
     completed_at: Optional[datetime] = None
 

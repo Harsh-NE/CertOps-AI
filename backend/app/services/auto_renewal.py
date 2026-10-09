@@ -11,7 +11,8 @@ All renewal attempts are recorded as RenewalTask rows by the caller
 (routers/renewals.py) so there's always an audit trail, whether renewal
 succeeded, failed, or was never attempted (e.g. missing credentials).
 """
-from typing import Dict, Any
+from typing import Any, Dict
+
 from app.config import settings
 
 

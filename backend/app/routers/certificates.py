@@ -1,12 +1,13 @@
 from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.database import get_db
 from app import models, schemas
-from app.auth import get_current_user
-from app.services.pipeline import scan_and_process_network_target, rescore_certificate
+from app.auth import get_current_user, require_role
+from app.database import get_db
 from app.services.cert_scanner import CertScanError
+from app.services.pipeline import rescore_certificate, scan_and_process_network_target
 
 router = APIRouter(prefix="/api/certificates", tags=["certificates"])
 
@@ -38,7 +39,7 @@ def get_certificate(cert_id: str, db: Session = Depends(get_db), user=Depends(ge
 
 
 @router.post("/scan", response_model=List[schemas.CertificateOut])
-def scan_targets(payload: schemas.ScanTargetRequest, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def scan_targets(payload: schemas.ScanTargetRequest, db: Session = Depends(get_db), user=Depends(require_role("operator"))):
     """Scan one or more network targets (host or host:port) right now."""
     results = []
     errors = []
@@ -54,7 +55,7 @@ def scan_targets(payload: schemas.ScanTargetRequest, db: Session = Depends(get_d
 
 
 @router.post("/{cert_id}/rescore", response_model=schemas.CertificateOut)
-def rescore(cert_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def rescore(cert_id: str, db: Session = Depends(get_db), user=Depends(require_role("operator"))):
     cert = db.query(models.Certificate).filter(models.Certificate.id == cert_id).first()
     if not cert:
         raise HTTPException(404, "Certificate not found")
@@ -62,7 +63,7 @@ def rescore(cert_id: str, db: Session = Depends(get_db), user=Depends(get_curren
 
 
 @router.post("/{cert_id}/toggle-auto-renew", response_model=schemas.CertificateOut)
-def toggle_auto_renew(cert_id: str, provider: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def toggle_auto_renew(cert_id: str, provider: str, db: Session = Depends(get_db), user=Depends(require_role("operator"))):
     cert = db.query(models.Certificate).filter(models.Certificate.id == cert_id).first()
     if not cert:
         raise HTTPException(404, "Certificate not found")

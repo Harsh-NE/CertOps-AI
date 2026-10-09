@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from datetime import datetime
 
-from app.database import get_db
 from app import models, schemas
 from app.auth import get_current_user
+from app.database import get_db
+from app.timeutil import days_until
 
 router = APIRouter(prefix="/api/risk", tags=["risk"])
 
@@ -16,7 +16,7 @@ def dashboard_stats(db: Session = Depends(get_db), user=Depends(get_current_user
     expiring_30 = sum(1 for c in certs if c.status == models.CertStatus.EXPIRING_SOON)
     expiring_7 = sum(
         1 for c in certs
-        if c.not_after and 0 <= (c.not_after.replace(tzinfo=None) - datetime.utcnow()).days <= 7
+        if c.not_after and 0 <= days_until(c.not_after) <= 7
     )
     expired = sum(1 for c in certs if c.status == models.CertStatus.EXPIRED)
     invalid_chain = sum(1 for c in certs if c.status == models.CertStatus.INVALID_CHAIN)

@@ -6,15 +6,13 @@ are intentionally narrow and log a RenewalTask row so agent-triggered actions
 are auditable exactly like scheduler- or human-triggered ones.
 """
 import json
-from datetime import datetime
-from typing import List
 
 from langchain.tools import tool
 from sqlalchemy.orm import Session
 
 from app import models
-from app.services.risk_ml import score_certificate
 from app.services.cert_scanner import days_until_expiry
+from app.timeutil import utcnow
 
 
 def build_tools(db: Session):
@@ -23,8 +21,7 @@ def build_tools(db: Session):
     @tool
     def list_expiring_certificates(days: int = 30) -> str:
         """List certificates expiring within the given number of days. Returns JSON."""
-        now = datetime.utcnow()
-        certs = db.query(models.Certificate).filter(models.Certificate.not_after != None).all()
+        certs = db.query(models.Certificate).filter(models.Certificate.not_after.is_not(None)).all()
         out = []
         for c in certs:
             d = days_until_expiry(c.not_after)
@@ -76,7 +73,7 @@ def build_tools(db: Session):
             reasons.append("Certificate chain is incomplete or does not lead to a trusted root.")
         if cert.revoked:
             reasons.append(f"Certificate has been revoked (checked via {cert.revocation_check_method or 'OCSP'}).")
-        if cert.not_after and cert.not_after < datetime.utcnow():
+        if cert.not_after and cert.not_after < utcnow():
             reasons.append(f"Certificate expired on {cert.not_after}.")
         if cert.signature_algorithm and any(w in cert.signature_algorithm.lower() for w in ("sha1", "md5")):
             reasons.append(f"Weak signature algorithm in use: {cert.signature_algorithm}.")

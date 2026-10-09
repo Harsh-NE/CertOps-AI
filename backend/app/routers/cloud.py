@@ -1,12 +1,11 @@
-from typing import List
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.database import get_db
 from app import schemas
-from app.auth import get_current_user
-from app.services.pipeline import process_discovered_certificate
+from app.auth import require_role
+from app.database import get_db
 from app.services.cloud_connectors import aws_acm, azure_keyvault, gcp_cert_manager, k8s_secrets
+from app.services.pipeline import process_discovered_certificate
 
 router = APIRouter(prefix="/api/cloud", tags=["cloud discovery"])
 
@@ -19,7 +18,7 @@ CONNECTORS = {
 
 
 @router.post("/discover")
-def discover(payload: schemas.CloudScanRequest, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def discover(payload: schemas.CloudScanRequest, db: Session = Depends(get_db), user=Depends(require_role("operator"))):
     """Run discovery against one or more configured cloud providers."""
     summary = {}
     for provider in payload.providers:

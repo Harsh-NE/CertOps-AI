@@ -6,13 +6,14 @@ and dependency-light; swap for Celery+Redis (see README "Scaling up") if
 you need distributed workers.
 """
 import logging
+
 from apscheduler.schedulers.background import BackgroundScheduler
 
+from app import models
 from app.config import settings
 from app.database import SessionLocal
-from app import models
-from app.services.pipeline import scan_and_process_network_target, rescore_certificate
 from app.services.cert_scanner import CertScanError
+from app.services.pipeline import rescore_certificate, scan_and_process_network_target
 
 logger = logging.getLogger("scheduler")
 scheduler = BackgroundScheduler()
@@ -44,8 +45,13 @@ def refresh_risk_scores():
         db.close()
 
 
+def stop_scheduler():
+    if scheduler.running:
+        scheduler.shutdown(wait=False)
+
+
 def start_scheduler():
-    scheduler.add_job(rescan_all_known_targets, "interval", hours=settings.SCAN_INTERVAL_HOURS, id="rescan_targets")
-    scheduler.add_job(refresh_risk_scores, "interval", hours=1, id="refresh_risk")
+    scheduler.add_job(rescan_all_known_targets, "interval", hours=settings.SCAN_INTERVAL_HOURS, id="rescan_targets", replace_existing=True)
+    scheduler.add_job(refresh_risk_scores, "interval", hours=1, id="refresh_risk", replace_existing=True)
     scheduler.start()
     logger.info("Scheduler started.")

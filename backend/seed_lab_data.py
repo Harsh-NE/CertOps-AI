@@ -7,9 +7,9 @@ setup. Requires the lab environment to be running:
 Usage (from backend/, with venv active):
     python seed_lab_data.py
 """
-from app.database import SessionLocal, Base, engine
-from app.services.pipeline import scan_and_process_network_target
+from app.database import Base, SessionLocal, engine
 from app.services.cert_scanner import CertScanError
+from app.services.pipeline import scan_and_process_network_target
 
 Base.metadata.create_all(bind=engine)
 
