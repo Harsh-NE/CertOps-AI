@@ -20,6 +20,7 @@ export default function CertificateDetail() {
   const [msg, setMsg] = useState(null)
   const [validation, setValidation] = useState(null)
   const [risk, setRisk] = useState(null)
+  const [plan, setPlan] = useState(null)
 
   async function load() {
     const res = await api.get(`/certificates/${id}`)
@@ -51,28 +52,37 @@ export default function CertificateDetail() {
     } finally { setBusy(false) }
   }
 
-  // Dry-run first (changes nothing); a real renewal needs an explicit confirmation.
-  async function renewNow() {
+  // Renewal is two-step: a dry-run plan, then explicit human approval. Nothing real happens until "Approve & execute".
+  async function planRenewal() {
     setBusy(true)
     try {
-      const dry = await api.post(`/renewals/${id}/renew-now`, null, { params: { dry_run: true } })
-      const proceed = window.confirm(`${dry.data.notes}
-
-Perform the REAL renewal now?`)
-      if (!proceed) {
-        setMsg({ ok: true, text: 'Dry run recorded. No changes made.' })
-        return
-      }
-      const res = await api.post(`/renewals/${id}/renew-now`, null, { params: { dry_run: false, confirm: true } })
-      setMsg({ ok: res.data.status !== 'failed', text: `Renewal attempt: ${res.data.status}` })
-      load()
+      const res = await api.post(`/renewals/${id}/plan`)
+      setPlan(res.data)
+      setMsg({ ok: true, text: 'Dry run complete. Review the plan below. Nothing has been changed.' })
     } catch (e) {
-      setMsg({ ok: false, text: e.response?.data?.detail || 'Renewal failed' })
+      setMsg({ ok: false, text: e.response?.data?.detail?.message || 'Could not create a plan.' })
     } finally { setBusy(false) }
   }
 
+  async function approveAndExecute() {
+    if (!window.confirm(`Approve and EXECUTE this renewal via ${plan.provider}? This issues a new certificate.`)) return
+    setBusy(true)
+    try {
+      await api.post(`/renewals/plans/${plan.id}/approve`)
+      const res = await api.post(`/renewals/plans/${plan.id}/execute`)
+      setMsg({ ok: res.data.status !== 'failed', text: `Renewal ${res.data.status}${res.data.new_serial ? ` (new serial ${res.data.new_serial})` : ''}. ${res.data.notes || ''}` })
+      setPlan(null)
+      load()
+    } catch (e) {
+      setMsg({ ok: false, text: e.response?.data?.detail?.message || 'Renewal failed.' })
+    } finally { setBusy(false) }
+  }
 
-  if (!cert) return <p className="text-muted">Loading…</p>
+  async function rejectPlan() {
+    await api.post(`/renewals/plans/${plan.id}/reject`)
+    setPlan(null)
+    setMsg({ ok: true, text: 'Plan rejected.' })
+  }
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -96,8 +106,8 @@ Perform the REAL renewal now?`)
           <Ticket size={14} /> Create renewal ticket
         </button>
         {cert.renewal_provider && (
-          <button onClick={renewNow} disabled={busy} className="flex items-center gap-1.5 bg-accent text-bg font-medium rounded-lg px-3 py-2 text-sm hover:opacity-90 transition">
-            <Zap size={14} /> Renew via {cert.renewal_provider} (dry run first)
+          <button onClick={planRenewal} disabled={busy} className="flex items-center gap-1.5 bg-accent text-bg font-medium rounded-lg px-3 py-2 text-sm hover:opacity-90 transition">
+            <Zap size={14} /> Plan renewal via {cert.renewal_provider} (dry run)
           </button>
         )}
       </div>
@@ -128,6 +138,19 @@ Perform the REAL renewal now?`)
           <p className="text-xs text-muted pt-2">Pushing risk up: {risk.factors.map((f) => `${f.feature}=${String(f.value)} (+${(f.effect * 100).toFixed(1)}pp)`).join(', ')}</p>
         )}
       </div>
+
+      {plan && (
+        <div className="card border-accent">
+          <h2 className="text-sm font-medium mb-2">Renewal plan ({plan.provider}), expires {new Date(plan.expires_at).toLocaleTimeString()}</h2>
+          <ol className="list-decimal ml-5 text-sm space-y-1">{plan.steps.map((st, i) => <li key={i}>{st}</li>)}</ol>
+          {plan.warnings.map((w, i) => <p key={i} className="text-warn text-sm mt-2">Warning: {w}</p>)}
+          {!plan.executable && <p className="text-danger text-sm mt-2">Cannot be executed: {plan.not_executable_reason}</p>}
+          <div className="flex gap-2 mt-3">
+            <button onClick={approveAndExecute} disabled={busy || !plan.executable} className="bg-accent text-bg rounded-lg px-3 py-2 text-sm disabled:opacity-40">Approve &amp; execute</button>
+            <button onClick={rejectPlan} disabled={busy} className="bg-panel2 border border-border rounded-lg px-3 py-2 text-sm">Reject</button>
+          </div>
+        </div>
+      )}
 
       <div className="card">
         <h2 className="text-sm font-medium mb-2">Validation {validation && <span className="text-muted">({validation.overall}, checked {new Date(validation.checked_at).toLocaleString()})</span>}</h2>

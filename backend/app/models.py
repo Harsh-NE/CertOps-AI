@@ -202,3 +202,54 @@ class ValidationResult(Base):
     chain_valid = Column(Boolean, nullable=True)
     revoked = Column(Boolean, nullable=True)
     findings = Column(Text, nullable=False)  # JSON list of {check, severity, message, details}
+
+
+class RenewalPlanStatus(str, enum.Enum):
+    PENDING_APPROVAL = "pending_approval"
+    APPROVED = "approved"
+    EXECUTING = "executing"
+    EXECUTED = "executed"
+    FAILED = "failed"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+
+
+class RenewalPlan(Base):
+    """
+    A dry-run result that doubles as the confirmation object for a real renewal. Execution requires this row to be
+    APPROVED by a human (login), unexpired, unused, and unchanged (plan_hash binds certificate + provider + params).
+    """
+    __tablename__ = "renewal_plans"
+    id = Column(String, primary_key=True, default=gen_uuid)
+    certificate_id = Column(String, ForeignKey("certificates.id"), index=True, nullable=False)
+    certificate = relationship("Certificate")
+    provider = Column(String, nullable=False)
+    params = Column(Text, nullable=False)  # JSON, e.g. {"domains": [...]}
+    plan_hash = Column(String, nullable=False)
+    steps = Column(Text, nullable=False)  # JSON list of human-readable steps
+    warnings = Column(Text, nullable=True)  # JSON list
+    executable = Column(Boolean, default=True)
+    not_executable_reason = Column(String, nullable=True)
+    status = Column(Enum(RenewalPlanStatus), default=RenewalPlanStatus.PENDING_APPROVAL, index=True)
+    created_by = Column(String, nullable=False)  # "user:alice" | "agent:alice"
+    created_at = Column(UtcDateTime, default=utcnow)
+    expires_at = Column(UtcDateTime, nullable=False)
+    approved_by = Column(String, nullable=True)
+    approved_at = Column(UtcDateTime, nullable=True)
+    executed_at = Column(UtcDateTime, nullable=True)
+    result = Column(Text, nullable=True)  # JSON, secrets excluded
+    renewal_task_id = Column(String, nullable=True)
+
+
+class AgentToolCall(Base):
+    """Audit trail: every tool call the agent attempted, including denied ones."""
+    __tablename__ = "agent_tool_calls"
+    id = Column(String, primary_key=True, default=gen_uuid)
+    request_id = Column(String, index=True, nullable=False)
+    actor = Column(String, nullable=False)
+    tool = Column(String, nullable=False, index=True)
+    args = Column(Text, nullable=True)
+    status = Column(String, nullable=False)  # ok | error | denied | timeout | limit
+    duration_ms = Column(Integer, default=0)
+    summary = Column(Text, nullable=True)
+    created_at = Column(UtcDateTime, default=utcnow, index=True)

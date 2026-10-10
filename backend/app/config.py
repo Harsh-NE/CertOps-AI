@@ -49,11 +49,14 @@ class Settings(BaseSettings):
     EXPIRY_WARNING_DAYS: int = 30
     EXPIRY_CRITICAL_DAYS: int = 7
 
-    # --- AI agent (provider is replaced by Gemini in Phase 4) ---
-    OPENAI_API_KEY: Optional[str] = None
-    OPENAI_BASE_URL: Optional[str] = None
-    AGENT_MODEL: str = "gpt-4o-mini"
-    AI_AGENT_ENABLED: bool = False  # auto-enabled when a key is set
+    # --- AI agent (Gemini via langchain-google-genai) ---
+    # Set GEMINI_API_KEY in .env. Run `python -m app.agent.llm --list-models` to see which models your key can use.
+    GEMINI_API_KEY: Optional[str] = None
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+    AGENT_TIMEOUT_SECONDS: float = 60.0  # whole request
+    AGENT_TOOL_TIMEOUT_SECONDS: float = 15.0  # per tool call
+    AGENT_MAX_TOOL_CALLS: int = 8
+    AI_AGENT_ENABLED: bool = False  # derived: true when GEMINI_API_KEY is set
 
     # --- Cloud providers (all optional) ---
     # boto3 otherwise falls back to ~/.aws and instance profiles; the AWS connector
@@ -75,10 +78,19 @@ class Settings(BaseSettings):
     KUBE_CONFIG_PATH: Optional[str] = None
 
     # --- Renewal ---
+    RENEWAL_PLAN_TTL_MINUTES: int = 15
     LETSENCRYPT_EMAIL: Optional[str] = None
-    LETSENCRYPT_STAGING: bool = True
-    VAULT_ADDR: Optional[str] = None
+    # Default is Let's Encrypt STAGING. For local tests use Pebble: https://localhost:14000/dir
+    ACME_DIRECTORY_URL: str = "https://acme-staging-v02.api.letsencrypt.org/directory"
+    ACME_ALLOW_PRODUCTION: bool = False  # the production directory is refused unless this is true
+    ACME_VERIFY_TLS: bool = True  # false only for Pebble's self-signed API certificate
+    ACME_CHALLENGE: str = "webroot"  # webroot | challtestsrv
+    ACME_WEBROOT_PATH: Optional[str] = None  # directory served at /.well-known/acme-challenge/
+    ACME_CHALLTESTSRV_URL: Optional[str] = None  # e.g. http://localhost:8055 (Pebble's challenge mock)
+    VAULT_ADDR: Optional[str] = None  # secret store for issued keys/certs; required to execute a renewal
     VAULT_TOKEN: Optional[str] = None
+    VAULT_KV_MOUNT: str = "secret"
+    VAULT_PATH_PREFIX: str = "certops"
 
     # --- Notifications ---
     SLACK_BOT_TOKEN: Optional[str] = None
@@ -98,7 +110,7 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> List[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
 
-    @field_validator("SECRET_KEY", "ADMIN_USERNAME", "ADMIN_PASSWORD", mode="before")
+    @field_validator("SECRET_KEY", "ADMIN_USERNAME", "ADMIN_PASSWORD", "GEMINI_API_KEY", mode="before")
     @classmethod
     def _blank_is_none(cls, v):
         return None if isinstance(v, str) and not v.strip() else v
@@ -126,5 +138,5 @@ def _ephemeral_key() -> str:
 
 
 settings = Settings()
-if settings.OPENAI_API_KEY:
+if settings.GEMINI_API_KEY:
     settings.AI_AGENT_ENABLED = True

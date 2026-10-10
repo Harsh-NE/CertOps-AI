@@ -4,9 +4,9 @@ import { Send, Bot, User } from 'lucide-react'
 
 const SUGGESTIONS = [
   'Which certificates expire within 30 days?',
-  'Why is app3.lab.local failing validation?',
-  'Show certificates issued by CertPlatform Lab expiring this quarter.',
-  'Recommend remediation for legacy.lab.local',
+  'Why is selfsigned.lab.test failing validation?',
+  'Which prod certificates expire in 14 days?',
+  'Create a renewal plan for healthy.lab.test',
 ]
 
 export default function AgentChat() {
@@ -27,7 +27,7 @@ export default function AgentChat() {
     setBusy(true)
     try {
       const res = await api.post('/agent/query', { question })
-      setMessages((m) => [...m, { role: 'assistant', text: res.data.answer, tools: res.data.used_tools }])
+      setMessages((m) => [...m, { role: 'assistant', text: res.data.answer, calls: res.data.tool_calls || [], pending: res.data.pending_plans || 0 }])
     } catch (e) {
       setMessages((m) => [...m, { role: 'assistant', text: 'Something went wrong reaching the agent.' }])
     } finally {
@@ -50,9 +50,14 @@ export default function AgentChat() {
               m.role === 'user' ? 'bg-accent text-bg' : 'bg-panel border border-border'
             }`}>
               {m.text}
-              {m.tools?.length > 0 && (
-                <p className="text-xs mt-2 opacity-60">tools used: {m.tools.join(', ')}</p>
+              {m.calls?.length > 0 && (
+                <p className="text-xs mt-2 opacity-80 flex flex-wrap gap-1">
+                  {m.calls.map((c, i) => (
+                    <span key={i} className={`px-1.5 py-0.5 rounded border ${c.status === 'ok' ? 'border-border' : 'border-danger text-danger'}`}>{c.tool}: {c.status}</span>
+                  ))}
+                </p>
               )}
+              {m.pending > 0 && <p className="text-xs mt-1 text-warn">A renewal plan awaits human approval on the Renewals page.</p>}
             </div>
             {m.role === 'user' && <User size={18} className="text-muted mt-1 shrink-0" />}
           </div>

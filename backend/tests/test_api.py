@@ -1,5 +1,3 @@
-from app import models
-from app.database import SessionLocal
 from tests.conftest import make_cert, serve_tls
 
 
@@ -38,60 +36,6 @@ def test_self_signed_scan_is_reported_invalid(client, admin_headers):
     assert c["chain_valid"] is False and c["status"] == "invalid_chain"
     assert c["key_algorithm"] == "RSA" and c["key_size"] == 2048 and c["is_wildcard"] is True
     assert len(c["fingerprint_sha256"]) == 64
-
-
-def _make_db_cert(provider="letsencrypt"):
-    db = SessionLocal()
-    try:
-        cert = models.Certificate(common_name="renew.test", renewal_provider=provider, auto_renew_enabled=True)
-        db.add(cert)
-        db.commit()
-        return cert.id
-    finally:
-        db.close()
-
-
-def test_renew_defaults_to_dry_run_and_calls_no_provider(client, admin_headers, monkeypatch):
-    import app.routers.renewals as renewals
-
-    def boom(*a, **k):
-        raise AssertionError("provider called during dry run")
-
-    monkeypatch.setattr(renewals, "trigger_renewal", boom)
-    cid = _make_db_cert()
-    r = client.post(f"/api/renewals/{cid}/renew-now", headers=admin_headers)
-    assert r.status_code == 200
-    assert r.json()["status"] == "dry_run" and r.json()["dry_run"] is True
-
-
-def test_real_renewal_requires_confirmation(client, admin_headers, monkeypatch):
-    import app.routers.renewals as renewals
-    calls = []
-
-    def fake(provider, **kwargs):
-        calls.append(provider)
-        return {"success": True, "serial_number": "ab"}
-
-    monkeypatch.setattr(renewals, "trigger_renewal", fake)
-    cid = _make_db_cert()
-    r = client.post(f"/api/renewals/{cid}/renew-now?dry_run=false", headers=admin_headers)
-    assert r.status_code == 400 and calls == []
-    r = client.post(f"/api/renewals/{cid}/renew-now?dry_run=false&confirm=true", headers=admin_headers)
-    assert r.status_code == 200 and r.json()["status"] == "auto_renewed" and calls == ["letsencrypt"]
-    assert r.json()["new_serial"] == "ab"
-
-
-def test_acm_never_claims_a_renewal_happened(client, admin_headers, monkeypatch):
-    from app.providers import aws_acm
-
-    class FakeAcm:
-        def describe_certificate(self, CertificateArn):
-            return {"Certificate": {"RenewalEligibility": "ELIGIBLE"}}
-
-    monkeypatch.setattr(aws_acm, "_client", lambda: FakeAcm())
-    cid = _make_db_cert("aws_acm")
-    r = client.post(f"/api/renewals/{cid}/renew-now?dry_run=false&confirm=true", headers=admin_headers)
-    assert r.json()["status"] == "skipped"
 
 
 def test_create_owner_does_not_need_an_id(client, admin_headers):

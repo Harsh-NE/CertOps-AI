@@ -119,8 +119,8 @@ def rescore(cert_id: str, db: Session = Depends(get_db), user=Depends(require_ro
 @router.post("/{cert_id}/toggle-auto-renew", response_model=schemas.CertificateOut)
 def toggle_auto_renew(cert_id: str, provider: str, db: Session = Depends(get_db),
                       user=Depends(require_role("operator"))):
-    if provider not in ("letsencrypt", "vault", "aws_acm"):
-        raise HTTPException(422, "provider must be one of letsencrypt, vault, aws_acm")
+    if provider not in ("letsencrypt", "aws_acm"):
+        raise HTTPException(422, "provider must be one of letsencrypt, aws_acm")
     cert = db.get(models.Certificate, cert_id)
     if not cert:
         raise HTTPException(404, "Certificate not found")

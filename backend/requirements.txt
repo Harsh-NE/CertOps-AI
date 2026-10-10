@@ -4,7 +4,7 @@
 # --- API ---
 fastapi==0.111.0
 uvicorn[standard]==0.30.1
-pydantic==2.7.4
+pydantic==2.14.0
 pydantic-settings==2.3.4
 python-multipart==0.0.31
 
@@ -32,10 +32,6 @@ pandas==2.2.2
 numpy==1.26.4
 joblib==1.4.2
 
-# --- Agent (replaced by the Gemini integration in Phase 4) ---
-langchain==0.2.11
-langchain-openai==0.1.19
-openai==1.37.1
 
 # --- Providers ---
 boto3==1.34.144
@@ -45,5 +41,15 @@ google-cloud-certificate-manager==1.14.0
 kubernetes==30.1.0
 
 # --- Renewal / notifications ---
-hvac==2.3.0
 slack_sdk==3.31.0
+
+# --- Agent (LangChain 1.x + LangGraph; Gemini via langchain-google-genai) ---
+langchain==1.4.4
+langchain-core==1.6.9
+langgraph==1.2.14
+langchain-google-genai==4.4.0
+
+# --- Renewal: ACME client (Let's Encrypt staging / Pebble) and Vault KV (secret storage) ---
+acme==5.8.0
+josepy==2.2.0
+hvac==2.4.0

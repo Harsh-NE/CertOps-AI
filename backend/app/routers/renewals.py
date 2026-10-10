@@ -1,4 +1,5 @@
-from typing import List
+import json
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -6,88 +7,115 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.auth import get_current_user, require_role
 from app.database import get_db
-from app.services.auto_renewal import trigger_renewal
+from app.renewal.service import Actor, RenewalError, RenewalService
 from app.services.notifications.jira import create_renewal_ticket
-from app.timeutil import days_until as days_until_expiry
+from app.timeutil import days_until
 
 router = APIRouter(prefix="/api/renewals", tags=["renewals"])
+
+_STATUS = {"plan_not_found": 404, "approval_requires_human": 403, "no_provider": 400, "unknown_provider": 400}
+
+
+def get_service(db: Session = Depends(get_db)) -> RenewalService:
+    return RenewalService(db)  # tests override this dependency to inject fake executors
+
+
+def _actor(user: models.User) -> Actor:
+    return Actor(kind="user", name=user.username, role=user.role)
+
+
+def _plan_out(p: models.RenewalPlan) -> schemas.RenewalPlanOut:
+    return schemas.RenewalPlanOut(
+        id=p.id, certificate_id=p.certificate_id, provider=p.provider, status=p.status.value, executable=bool(p.executable),
+        not_executable_reason=p.not_executable_reason, steps=json.loads(p.steps), warnings=json.loads(p.warnings or "[]"),
+        created_by=p.created_by, created_at=p.created_at, expires_at=p.expires_at, approved_by=p.approved_by,
+        approved_at=p.approved_at, executed_at=p.executed_at, result=json.loads(p.result) if p.result else None)
+
+
+def _fail(e: RenewalError):
+    raise HTTPException(_STATUS.get(e.code, 409), detail={"code": e.code, "message": str(e)}) from e
 
 
 @router.get("", response_model=List[schemas.RenewalTaskOut])
 def list_renewal_tasks(db: Session = Depends(get_db), user=Depends(get_current_user)):
+    """Renewal history: dry runs, executions, tickets."""
     return db.query(models.RenewalTask).order_by(models.RenewalTask.created_at.desc()).all()
 
 
 @router.post("/{cert_id}/create-ticket", response_model=schemas.RenewalTaskOut)
 def create_ticket(cert_id: str, db: Session = Depends(get_db), user=Depends(require_role("operator"))):
-    cert = db.query(models.Certificate).filter(models.Certificate.id == cert_id).first()
+    cert = db.get(models.Certificate, cert_id)
     if not cert:
         raise HTTPException(404, "Certificate not found")
-
-    d = days_until_expiry(cert.not_after) if cert.not_after else -1
-    jira_result = create_renewal_ticket(cert.common_name, d, cert.owner.team if cert.owner else None)
-
+    d = days_until(cert.not_after)
+    jira_result = create_renewal_ticket(cert.common_name, d if d is not None else -1, cert.owner.team if cert.owner else None)
     task = models.RenewalTask(
         certificate_id=cert.id,
         status=models.RenewalTaskStatus.JIRA_CREATED if jira_result.get("created") else models.RenewalTaskStatus.PENDING,
-        jira_ticket_key=jira_result.get("key"),
-        notes=None if jira_result.get("created") else jira_result.get("reason"),
-        triggered_by=f"user:{user.username}", provider="jira",
-    )
+        jira_ticket_key=jira_result.get("key"), notes=None if jira_result.get("created") else jira_result.get("reason"),
+        triggered_by=f"user:{user.username}", provider="jira")
     db.add(task)
     db.commit()
     db.refresh(task)
     return task
 
 
-def _provider_kwargs(cert: models.Certificate) -> dict:
-    if cert.renewal_provider == "letsencrypt":
-        return {"domain": cert.common_name}
-    if cert.renewal_provider == "vault":
-        return {"pki_role": "default", "common_name": cert.common_name}
-    if cert.renewal_provider == "aws_acm":
-        return {"certificate_arn": cert.source_ref}
-    return {}
-
-
-@router.post("/{cert_id}/renew-now", response_model=schemas.RenewalTaskOut)
-def renew_now(
-    cert_id: str,
-    dry_run: bool = True,
-    confirm: bool = False,
-    db: Session = Depends(get_db),
-    user=Depends(require_role("operator")),
-):
-    """
-    Dry-run by default: records what *would* happen and changes nothing.
-    A real renewal needs both ``dry_run=false`` and ``confirm=true``.
-    """
-    cert = db.query(models.Certificate).filter(models.Certificate.id == cert_id).first()
+@router.post("/{cert_id}/plan", response_model=schemas.RenewalPlanOut)
+def create_plan(cert_id: str, db: Session = Depends(get_db), svc: RenewalService = Depends(get_service),
+                user=Depends(require_role("operator"))):
+    """Dry run. Creates a plan that must be approved before it can be executed."""
+    cert = db.get(models.Certificate, cert_id)
     if not cert:
         raise HTTPException(404, "Certificate not found")
-    if not cert.renewal_provider:
-        raise HTTPException(400, "No renewal provider configured for this certificate")
-    if not dry_run and not confirm:
-        raise HTTPException(400, "Real renewal requires confirm=true (or use dry_run=true)")
+    try:
+        return _plan_out(svc.plan(cert, _actor(user)))
+    except RenewalError as e:
+        _fail(e)
 
-    task = models.RenewalTask(
-        certificate_id=cert.id, provider=cert.renewal_provider, dry_run=dry_run,
-        previous_serial=cert.serial_number, triggered_by=f"user:{user.username}",
-    )
-    if dry_run:
-        task.status = models.RenewalTaskStatus.DRY_RUN
-        task.notes = f"DRY RUN: would renew '{cert.common_name}' via {cert.renewal_provider}; no action taken."
-    else:
-        result = trigger_renewal(cert.renewal_provider, **_provider_kwargs(cert))
-        if result.get("success"):
-            task.status = models.RenewalTaskStatus.AUTO_RENEWED
-        elif result.get("action_taken") is False:
-            task.status = models.RenewalTaskStatus.SKIPPED
-        else:
-            task.status = models.RenewalTaskStatus.FAILED
-        task.new_serial = result.get("serial_number")
-        task.notes = str({k: v for k, v in result.items() if k not in ("certificate", "stdout", "stderr")})
-    db.add(task)
-    db.commit()
-    db.refresh(task)
-    return task
+
+@router.get("/plans", response_model=List[schemas.RenewalPlanOut])
+def list_plans(certificate_id: Optional[str] = None, status: Optional[str] = None, db: Session = Depends(get_db),
+               user=Depends(get_current_user)):
+    q = db.query(models.RenewalPlan)
+    if certificate_id:
+        q = q.filter_by(certificate_id=certificate_id)
+    if status:
+        try:
+            q = q.filter_by(status=models.RenewalPlanStatus(status))
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from e
+    return [_plan_out(p) for p in q.order_by(models.RenewalPlan.created_at.desc()).limit(100).all()]
+
+
+@router.get("/plans/{plan_id}", response_model=schemas.RenewalPlanOut)
+def get_plan(plan_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    plan = db.get(models.RenewalPlan, plan_id)
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    return _plan_out(plan)
+
+
+@router.post("/plans/{plan_id}/approve", response_model=schemas.RenewalPlanOut)
+def approve_plan(plan_id: str, svc: RenewalService = Depends(get_service), user=Depends(require_role("operator"))):
+    """Human approval (requires a signed-in operator/admin). The agent has no equivalent tool."""
+    try:
+        return _plan_out(svc.approve(plan_id, _actor(user)))
+    except RenewalError as e:
+        _fail(e)
+
+
+@router.post("/plans/{plan_id}/reject", response_model=schemas.RenewalPlanOut)
+def reject_plan(plan_id: str, svc: RenewalService = Depends(get_service), user=Depends(require_role("operator"))):
+    try:
+        return _plan_out(svc.reject(plan_id, _actor(user)))
+    except RenewalError as e:
+        _fail(e)
+
+
+@router.post("/plans/{plan_id}/execute", response_model=schemas.RenewalTaskOut)
+def execute_plan(plan_id: str, svc: RenewalService = Depends(get_service), user=Depends(require_role("operator"))):
+    """Executes an approved, unexpired, unused plan."""
+    try:
+        return svc.execute(plan_id, _actor(user))
+    except RenewalError as e:
+        _fail(e)

@@ -131,6 +131,23 @@ class AgentQueryRequest(BaseModel):
 class AgentQueryResponse(BaseModel):
     answer: str
     used_tools: List[str] = []
+    tool_calls: List[Dict[str, Any]] = []
+    pending_plans: int = 0
+    configured: bool = True
+    request_id: Optional[str] = None
+    error: Optional[str] = None
+    elapsed_ms: Optional[int] = None
+
+
+class AgentToolCallOut(BaseModel):
+    id: str
+    request_id: str
+    actor: str
+    tool: str
+    args: Optional[Any] = None
+    status: str
+    duration_ms: int
+    created_at: datetime
 
 
 class Token(BaseModel):
@@ -192,3 +209,21 @@ class RiskPredictionOut(BaseModel):
     risk_score: Optional[float] = None
     floor_reason: Optional[str] = None
     predicted_outage_impact: Optional[str] = None
+
+
+class RenewalPlanOut(BaseModel):
+    id: str
+    certificate_id: str
+    provider: str
+    status: str
+    executable: bool
+    not_executable_reason: Optional[str] = None
+    steps: List[str]
+    warnings: List[str]
+    created_by: str
+    created_at: datetime
+    expires_at: datetime
+    approved_by: Optional[str] = None
+    approved_at: Optional[datetime] = None
+    executed_at: Optional[datetime] = None
+    result: Optional[Dict[str, Any]] = None

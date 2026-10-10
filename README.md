@@ -22,8 +22,9 @@ project — but structured like a real production service, not a toy script.
 | Azure Key Vault, GCP Certificate Manager | **Simulated** | Fake clients shaped like the SDK responses; never run against Azure/GCP |
 | Scheduled monitoring | **Real** | Retry/backoff and persisted run state (`job_runs`) are unit-tested; scheduler wiring itself is not |
 | Risk model (scikit-learn gradient boosting) | **Real model, trained and evaluated on SYNTHETIC data only**; no real-world accuracy claim | `python -m app.ml.evaluate` |
-| LangChain agent | **Partial**: tools work; the LLM loop is untested | Phase 4 rework pending |
-| Renewal | **Unverified**: dry-run by default, real run needs `confirm=true`; Let's Encrypt/Vault flows never exercised | Phase 4 rework pending |
+| LangChain agent (Gemini) | **Real agent graph, guardrails and audit; live Gemini path NOT yet run** (no API key available during development) | 28-case eval; `python -m app.agent.eval` |
+| Renewal: ACME + Vault | **Real**, verified against a local Pebble CA and dev-mode Vault; human approval required; Let's Encrypt staging/production NOT exercised; deploying the new cert is not automated | `RENEWAL_INTEGRATION=1 pytest tests/integration` |
+| Renewal: AWS ACM | **Not executable** by design (ACM cannot be force-renewed); plans say so | unit tests |
 
 ## Quick start
 
@@ -108,6 +109,27 @@ Reproduce: `cd backend && python -m app.ml.evaluate --docs ../docs/results` (see
 
 Gradient boosting minus baseline, bootstrap 95% CI: ROC-AUC +0.127 .. +0.214, PR-AUC +0.091 .. +0.165.
 At the F1-optimal threshold the model is essentially tied with the days-to-expiry rule; the gain is in ranking.
+
+## Agent evaluation
+
+> **What this number is.** The offline run uses a *keyword stand-in* instead of an LLM, so it measures the tool layer,
+> guardrails (human approval gate, role restrictions, allow-list, audit) and answer plumbing. It does **not** measure
+> how well Gemini chooses tools; that requires a live or recorded run (see [docs/agent.md](docs/agent.md)).
+
+Reproduce: `cd backend && python -m app.agent.eval --docs ../docs/results`
+
+| backend | cases counted | passed | success rate |
+|---|---|---|---|
+| scripted (keyword stand-in) | 27 of 28 | 27 | 100.0% |
+| live Gemini | not run | not run | not measured |
+
+The eval can fail: `tests/test_agent.py` removes the approval gate, breaks role checks and corrupts search results,
+and asserts the eval then reports failures.
+
+## Renewal lab
+
+`docker compose -f docker-compose.renewal-lab.yml up -d` starts Pebble (a real ACME server), its challenge mock and
+Vault in dev mode (test only). Then `RENEWAL_INTEGRATION=1 pytest tests/integration/test_acme_pebble.py`.
 
 ## Local certificate lab
 

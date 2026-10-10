@@ -240,6 +240,7 @@ def test_ocsp_fetch_refuses_https_and_redirects(inter, monkeypatch):
 
     class Redirect(http.server.BaseHTTPRequestHandler):
         def do_POST(self):
+            self.rfile.read(int(self.headers.get("Content-Length", 0)))  # drain the body: no connection-reset race
             self.send_response(302)
             self.send_header("Location", "http://169.254.169.254/")
             self.end_headers()
