@@ -17,7 +17,8 @@ project — but structured like a real production service, not a toy script.
 | Network TLS discovery (presented chain, SNI) | **Real** | Live local TLS servers |
 | Validation: expiry, hostname, key size/algorithm, weak signature, self-signed, trust path, revocation (OCSP) | **Real** | 33 unit tests + lab scenarios; OCSP against a local responder |
 | AWS ACM | **Real code, tested against moto** | moto mock; never run against a real AWS account |
-| Kubernetes (`kubernetes.io/tls` Secrets, cert-manager `Certificate` status) | **Real client code, fake-client tests** | Real-cluster test exists (`tests/integration`) but has not been run yet |
+| Kubernetes `kubernetes.io/tls` Secrets | **Real**, verified against a live cluster (Docker Desktop Kubernetes v1.36.1) | `KUBE_INTEGRATION=1 pytest tests/integration`; fake-client unit tests cover the rest |
+| cert-manager `Certificate` status | **Simulated** | Fixtures only; cert-manager was not installed in the test cluster |
 | Azure Key Vault, GCP Certificate Manager | **Simulated** | Fake clients shaped like the SDK responses; never run against Azure/GCP |
 | Scheduled monitoring | **Real** | Retry/backoff and persisted run state (`job_runs`) are unit-tested; scheduler wiring itself is not |
 | Risk model | **Synthetic data only**; no real-world accuracy claim | Phase 3 rework pending |
