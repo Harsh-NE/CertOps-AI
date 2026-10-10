@@ -7,6 +7,8 @@ COPY requirements.txt constraints.txt ./
 RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
 COPY . .
+# Train the (synthetic-data) risk model into the image so scores come from the model, not the fallback rule.
+RUN python -m app.ml.train --bootstrap 50
 
 EXPOSE 8000
 # Apply migrations, then serve. Single worker: the in-process scheduler must not run twice.

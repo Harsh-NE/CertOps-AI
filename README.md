@@ -21,7 +21,7 @@ project — but structured like a real production service, not a toy script.
 | cert-manager `Certificate` status | **Simulated** | Fixtures only; cert-manager was not installed in the test cluster |
 | Azure Key Vault, GCP Certificate Manager | **Simulated** | Fake clients shaped like the SDK responses; never run against Azure/GCP |
 | Scheduled monitoring | **Real** | Retry/backoff and persisted run state (`job_runs`) are unit-tested; scheduler wiring itself is not |
-| Risk model | **Synthetic data only**; no real-world accuracy claim | Phase 3 rework pending |
+| Risk model (scikit-learn gradient boosting) | **Real model, trained and evaluated on SYNTHETIC data only**; no real-world accuracy claim | `python -m app.ml.evaluate` |
 | LangChain agent | **Partial**: tools work; the LLM loop is untested | Phase 4 rework pending |
 | Renewal | **Unverified**: dry-run by default, real run needs `confirm=true`; Let's Encrypt/Vault flows never exercised | Phase 4 rework pending |
 
@@ -91,6 +91,23 @@ cert-platform/
 ├── SETUP.md            <- step-by-step setup instructions
 └── README.md           <- you are here
 ```
+
+## Risk model results (synthetic data)
+
+> **Synthetic data.** There is no labelled real-world incident data. These numbers show how well each model recovers
+> the simulator's structure, not real-world accuracy. Details and limitations: [docs/risk_model.md](docs/risk_model.md).
+
+Label: certificate causes a service problem within 30 days. Team-grouped split; thresholds chosen on validation; test set shown.
+Reproduce: `cd backend && python -m app.ml.evaluate --docs ../docs/results` (seed 7, n=20000).
+
+| model | precision | recall | f1 | roc_auc | pr_auc | brier |
+|---|---|---|---|---|---|---|
+| baseline_days_to_expiry | 0.580 | 0.438 | 0.499 | 0.694 | 0.440 | n/a |
+| logistic_regression | 0.189 | 0.313 | 0.235 | 0.749 | 0.162 | 0.052 |
+| gradient_boosting | 0.596 | 0.438 | 0.505 | 0.863 | 0.568 | 0.035 |
+
+Gradient boosting minus baseline, bootstrap 95% CI: ROC-AUC +0.127 .. +0.214, PR-AUC +0.091 .. +0.165.
+At the F1-optimal threshold the model is essentially tied with the days-to-expiry rule; the gain is in ranking.
 
 ## Local certificate lab
 

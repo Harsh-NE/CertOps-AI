@@ -37,5 +37,8 @@ def test_lab_scenarios_produce_the_documented_statuses(tmp_path, monkeypatch):
         assert ok.revoked is False and ok.revocation_check_method == "OCSP"
         bad = db.query(models.Certificate).filter_by(source_ref=specs[10].ref).one()
         assert bad.revoked is True
+        assert bad.risk_tier.value == "critical"  # was 'medium' before explicit floors for failing certificates
+        healthy = db.query(models.Certificate).filter_by(source_ref=specs[0].ref).one()
+        assert healthy.risk_tier.value in ("low", "medium") and healthy.predicted_renewal_delay_days is None
     finally:
         db.close()

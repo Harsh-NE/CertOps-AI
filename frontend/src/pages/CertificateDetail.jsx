@@ -19,12 +19,15 @@ export default function CertificateDetail() {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
   const [validation, setValidation] = useState(null)
+  const [risk, setRisk] = useState(null)
 
   async function load() {
     const res = await api.get(`/certificates/${id}`)
     setCert(res.data)
     const v = await api.get(`/certificates/${id}/validation`, { params: { limit: 1 } })
     setValidation(v.data[0] || null)
+    const r = await api.get(`/risk/certificates/${id}`)
+    setRisk(r.data)
   }
   useEffect(() => { load() }, [id])
 
@@ -118,8 +121,12 @@ Perform the REAL renewal now?`)
         <h2 className="text-sm font-medium mb-2">Risk &amp; prediction</h2>
         <Row label="Risk score" value={cert.risk_score} />
         <Row label="Risk tier" value={cert.risk_tier} />
-        <Row label="Predicted renewal delay" value={cert.predicted_renewal_delay_days ? `${cert.predicted_renewal_delay_days} days` : null} />
-        <Row label="Predicted outage impact" value={cert.predicted_outage_impact} />
+        <Row label="30-day problem probability" value={risk ? `${(risk.probability * 100).toFixed(1)}%${risk.floor_reason ? ` (floor: ${risk.floor_reason})` : ''}` : null} />
+        <Row label="Outage impact (rule-based)" value={cert.predicted_outage_impact} />
+        <Row label="Model" value={risk ? `${risk.model_used}${risk.data_source === 'synthetic' ? ' (trained on synthetic data)' : ''}` : null} />
+        {risk && risk.factors.length > 0 && (
+          <p className="text-xs text-muted pt-2">Pushing risk up: {risk.factors.map((f) => `${f.feature}=${String(f.value)} (+${(f.effect * 100).toFixed(1)}pp)`).join(', ')}</p>
+        )}
       </div>
 
       <div className="card">

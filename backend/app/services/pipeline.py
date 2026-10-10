@@ -12,12 +12,12 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.config import settings
+from app.ml.scoring import flags_from_findings, score_certificate
 from app.providers.base import NormalizedCertificate
 from app.providers.normalize import normalize_x509
 from app.services.notifications.slack import send_slack_alert
 from app.services.notifications.teams import send_teams_alert
 from app.services.ownership_discovery import resolve_owner
-from app.services.risk_ml import score_certificate
 from app.timeutil import days_until, utcnow
 from app.validation.engine import ValidationReport, validate
 from app.validation.trust import load_roots
@@ -86,10 +86,10 @@ def apply_report(db: Session, cert: models.Certificate, report: ValidationReport
         db.add(models.ValidationResult(
             certificate_id=cert.id, overall=report.overall, chain_valid=report.chain_valid, revoked=report.revoked,
             findings=findings))
-    _set_status_and_risk(cert, report)
+    _set_status_and_risk(db, cert, report)
 
 
-def _set_status_and_risk(cert: models.Certificate, report: Optional[ValidationReport] = None) -> None:
+def _set_status_and_risk(db: Session, cert: models.Certificate, report: Optional[ValidationReport] = None) -> None:
     d = days_until(cert.not_after)
     has = (lambda c: report.has(c)) if report else (lambda c: False)
     if cert.revoked:
@@ -109,10 +109,13 @@ def _set_status_and_risk(cert: models.Certificate, report: Optional[ValidationRe
     else:
         cert.status = models.CertStatus.UNKNOWN
 
-    score = score_certificate(cert)
+    flags = None
+    if report is not None:
+        flags = flags_from_findings(report.findings_as_dicts())
+    score = score_certificate(db, cert, flags)
     cert.risk_score = score["risk_score"]
-    cert.risk_tier = models.RiskTier(score["risk_tier"])
-    cert.predicted_renewal_delay_days = score["predicted_renewal_delay_days"]
+    cert.risk_tier = models.RiskTier(score["tier"])
+    cert.predicted_renewal_delay_days = None  # the old "renewal delay" regressor was trained on a made-up target; removed
     cert.predicted_outage_impact = score["predicted_outage_impact"]
 
 

@@ -152,3 +152,43 @@ class DashboardStats(BaseModel):
     high_risk: int
     auto_renew_enabled: int
     security_score: float
+
+
+class RiskPredictIn(BaseModel):
+    """What-if input for POST /api/risk/predict. Only days_to_expiry is required."""
+    days_to_expiry: float
+    validity_days: Optional[float] = 90
+    key_size: Optional[int] = 2048
+    key_algorithm: Optional[str] = "RSA"
+    chain_depth: Optional[int] = 3
+    san_count: Optional[int] = 1
+    is_wildcard: bool = False
+    auto_renew: bool = False
+    has_owner: bool = True
+    is_prod: bool = False
+    weak_signature: bool = False
+    chain_invalid: bool = False
+    hostname_mismatch: bool = False
+    issuer: Optional[str] = None
+    source: Optional[str] = "network_scan"
+    prior_attempts: int = 0
+    prior_failures: int = 0
+
+
+class RiskFactor(BaseModel):
+    feature: str
+    value: Any
+    typical: Any
+    effect: float
+
+
+class RiskPredictionOut(BaseModel):
+    probability: float
+    tier: str
+    model_used: str
+    model_version: Optional[str] = None
+    data_source: str
+    factors: List[RiskFactor] = []
+    risk_score: Optional[float] = None
+    floor_reason: Optional[str] = None
+    predicted_outage_impact: Optional[str] = None
