@@ -119,3 +119,13 @@ def viewer_headers(client):
 @pytest.fixture()
 def ec_key():
     return ec.generate_private_key(ec.SECP256R1())
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_risk_model(monkeypatch):
+    """
+    Tests must not depend on a locally trained model file (it is gitignored, so CI never has one).
+    By default no artifact is loaded; tests that need a model use the `serving` fixture, which trains a small one.
+    """
+    from app.ml import scoring
+    monkeypatch.setattr(scoring, "load_artifact", lambda: None)

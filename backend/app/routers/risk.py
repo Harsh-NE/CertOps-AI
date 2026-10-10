@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.auth import get_current_user
 from app.database import get_db
-from app.ml.scoring import load_artifact, predict_raw, score_certificate
+from app.ml import scoring
 from app.timeutil import days_until
 
 router = APIRouter(prefix="/api/risk", tags=["risk"])
@@ -39,7 +39,7 @@ def dashboard_stats(db: Session = Depends(get_db), user=Depends(get_current_user
 @router.get("/model")
 def model_info(user=Depends(get_current_user)):
     """Which model is serving, what it was trained on, and its held-out (synthetic-data) metrics."""
-    art = load_artifact()
+    art = scoring.load_artifact()
     if art is None:
         return {"model_used": "rule_baseline", "data_source": "none",
                 "note": "No trained artifact found; run `python -m app.ml.train`. Scores come from an unvalidated rule."}
@@ -50,7 +50,7 @@ def model_info(user=Depends(get_current_user)):
 @router.post("/predict", response_model=schemas.RiskPredictionOut)
 def predict(payload: schemas.RiskPredictIn, user=Depends(get_current_user)):
     """What-if prediction from raw attributes (no database access)."""
-    return predict_raw(payload.model_dump())
+    return scoring.predict_raw(payload.model_dump())
 
 
 @router.get("/certificates/{cert_id}", response_model=schemas.RiskPredictionOut)
@@ -59,7 +59,7 @@ def certificate_risk(cert_id: str, db: Session = Depends(get_db), user=Depends(g
     cert = db.get(models.Certificate, cert_id)
     if not cert:
         raise HTTPException(404, "Certificate not found")
-    return score_certificate(db, cert)
+    return scoring.score_certificate(db, cert)
 
 
 TIMELINE_BUCKETS = [("expired", None, -1), ("0-7 d", 0, 7), ("8-14 d", 8, 14), ("15-30 d", 15, 30),
