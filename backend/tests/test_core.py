@@ -38,3 +38,8 @@ def test_production_requires_secret_key():
 
 def test_development_gets_ephemeral_key():
     assert len(Settings(ENV="development", SECRET_KEY=None, _env_file=None).resolved_secret_key()) > 30
+
+
+def test_cors_origins_parse_comma_separated_env(monkeypatch):
+    monkeypatch.setenv("CORS_ORIGINS", "http://a.example, http://b.example")
+    assert Settings(_env_file=None).cors_origins_list == ["http://a.example", "http://b.example"]

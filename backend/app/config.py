@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     ALLOW_REGISTRATION: bool = False  # open sign-up creates read-only "viewer" users only
     ADMIN_USERNAME: Optional[str] = None  # bootstrap admin, created at startup if no users exist
     ADMIN_PASSWORD: Optional[str] = None
-    CORS_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:3000"]
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"  # comma-separated
 
     # --- Scheduler ---
     SCHEDULER_ENABLED: bool = True
@@ -86,12 +86,9 @@ class Settings(BaseSettings):
     JIRA_API_TOKEN: Optional[str] = None
     JIRA_PROJECT_KEY: str = "CERT"
 
-    @field_validator("CORS_ORIGINS", mode="before")
-    @classmethod
-    def _split_origins(cls, v):
-        if isinstance(v, str) and not v.strip().startswith("["):
-            return [o.strip() for o in v.split(",") if o.strip()]
-        return v
+    @property
+    def cors_origins_list(self) -> List[str]:
+        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
 
     @field_validator("SECRET_KEY", "ADMIN_USERNAME", "ADMIN_PASSWORD", mode="before")
     @classmethod
