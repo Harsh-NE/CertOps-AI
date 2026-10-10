@@ -2,11 +2,12 @@
 OCSP revocation check with response verification. We never report a certificate as "not revoked"
 unless a signed, fresh OCSP response says GOOD; anything else is `unavailable`/`unknown` (revoked=None).
 """
+import http.client
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, List, Optional
+from urllib.parse import urlparse
 
-import requests
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
@@ -34,14 +35,29 @@ Fetcher = Callable[[str, bytes, float], bytes]
 
 
 def http_fetch(url: str, body: bytes, timeout: float) -> bytes:
-    netguard.check_url(url)
-    resp = requests.post(url, data=body, headers={"Content-Type": "application/ocsp-request"},
-                         timeout=timeout, allow_redirects=False, stream=True)
-    resp.raise_for_status()
-    data = resp.raw.read(MAX_RESPONSE_BYTES + 1, decode_content=True)
-    if len(data) > MAX_RESPONSE_BYTES:
-        raise ValueError("OCSP response too large")
-    return data
+    """
+    POST an OCSP request to a plain-http responder, connecting to the *vetted* IP (the address we checked is the
+    address we use, so DNS rebinding cannot swap in an internal one). No redirects are followed, the response is
+    size-capped, and https responders are refused (they are rare and would need pinned TLS handling).
+    """
+    u = urlparse(url)
+    if u.scheme != "http" or not u.hostname:
+        raise netguard.BlockedTargetError(f"only http OCSP responders are supported: {url}")
+    port = u.port or 80
+    ip = netguard.resolve_public(u.hostname, port)
+    conn = http.client.HTTPConnection(ip, port, timeout=timeout)
+    try:
+        conn.request("POST", u.path or "/", body=body, headers={
+            "Host": u.netloc, "Content-Type": "application/ocsp-request", "Content-Length": str(len(body))})
+        resp = conn.getresponse()
+        if resp.status != 200:  # includes 3xx: redirects are never followed
+            raise ValueError(f"OCSP responder returned HTTP {resp.status}")
+        data = resp.read(MAX_RESPONSE_BYTES + 1)
+        if len(data) > MAX_RESPONSE_BYTES:
+            raise ValueError("OCSP response too large")
+        return data
+    finally:
+        conn.close()
 
 
 def ocsp_urls(cert: x509.Certificate) -> List[str]:

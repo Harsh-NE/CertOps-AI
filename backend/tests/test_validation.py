@@ -211,3 +211,53 @@ def test_netguard_rejects_odd_url_schemes():
     for url in ("file:///etc/passwd", "gopher://x/", "ftp://x/"):
         with pytest.raises(netguard.BlockedTargetError):
             netguard.check_url(url)
+
+
+# ---- OCSP fetch is pinned to the vetted IP ----------------------------------------------------------------
+
+def test_ocsp_fetch_connects_to_the_vetted_ip_not_a_second_dns_answer(root, inter, monkeypatch):
+    """The hostname does not resolve; only the (monkeypatched) vetted IP works, so a re-resolving client would fail."""
+    from app.validation.ocsp import http_fetch
+    resp = OcspResponder(inter)
+    port = resp.server.server_port
+    seen = []
+    monkeypatch.setattr(netguard, "resolve_public", lambda host, p: seen.append((host, p)) or "127.0.0.1")
+    try:
+        _, cert = inter.issue_leaf("good.lab.test", ocsp_url=resp.url)
+        body = ocsp_request_for(cert, inter.cert)
+        assert http_fetch(f"http://ocsp.does-not-resolve.test:{port}/ocsp", body, 3)
+        assert seen == [("ocsp.does-not-resolve.test", port)]
+    finally:
+        resp.close()
+
+
+def test_ocsp_fetch_refuses_https_and_redirects(inter, monkeypatch):
+    from app.validation.ocsp import http_fetch
+    with pytest.raises(netguard.BlockedTargetError):
+        http_fetch("https://ocsp.example.test/ocsp", b"x", 2)
+    import http.server
+    import threading
+
+    class Redirect(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.send_response(302)
+            self.send_header("Location", "http://169.254.169.254/")
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), Redirect)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        with pytest.raises(ValueError, match="HTTP 302"):
+            http_fetch(f"http://127.0.0.1:{srv.server_port}/", b"x", 2)
+    finally:
+        srv.shutdown()
+
+
+def ocsp_request_for(cert, issuer):
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.x509 import ocsp
+    return ocsp.OCSPRequestBuilder().add_certificate(cert, issuer, hashes.SHA1()).build().public_bytes(
+        serialization.Encoding.DER)
