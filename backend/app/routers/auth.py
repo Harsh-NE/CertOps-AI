@@ -5,7 +5,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.auth import create_access_token, hash_password, verify_password
+from app.auth import create_access_token, get_current_user, hash_password, verify_password
 from app.config import settings
 from app.database import get_db
 
@@ -44,3 +44,9 @@ def register(payload: schemas.UserLogin, db: Session = Depends(get_db)):
     db.commit()
     token = create_access_token({"sub": user.username, "role": user.role})
     return {"access_token": token}
+
+
+@router.get("/me")
+def me(user: models.User = Depends(get_current_user)):
+    """Who am I? The UI uses the role to hide actions the server would refuse anyway."""
+    return {"username": user.username, "role": user.role}

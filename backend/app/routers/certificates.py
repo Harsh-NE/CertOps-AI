@@ -2,7 +2,7 @@ import json
 from datetime import timedelta
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -25,6 +25,9 @@ def list_certificates(
     environment: Optional[str] = None,
     expires_within_days: Optional[int] = None,
     q: Optional[str] = None,
+    limit: Optional[int] = Query(None, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    response: Response = None,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
@@ -46,7 +49,11 @@ def list_certificates(
         like = f"%{q}%"
         query = query.filter(or_(models.Certificate.common_name.ilike(like), models.Certificate.issuer.ilike(like),
                                  models.Certificate.source_ref.ilike(like)))
-    return query.order_by(models.Certificate.not_after.asc().nulls_last()).all()
+    response.headers["X-Total-Count"] = str(query.count())
+    query = query.order_by(models.Certificate.not_after.asc().nulls_last(), models.Certificate.id)
+    if limit is not None:
+        query = query.offset(offset).limit(limit)
+    return query.all()
 
 
 @router.get("/{cert_id}", response_model=schemas.CertificateOut)
@@ -127,5 +134,4 @@ def toggle_auto_renew(cert_id: str, provider: str, db: Session = Depends(get_db)
     cert.auto_renew_enabled = not cert.auto_renew_enabled
     cert.renewal_provider = provider if cert.auto_renew_enabled else None
     db.commit()
-    db.refresh(cert)
-    return cert
+    return revalidate_certificate(db, cert)  # auto_renew is a risk feature: refresh the stored score

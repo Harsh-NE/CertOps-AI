@@ -112,6 +112,7 @@ class RenewalTaskOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
     certificate_id: str
+    certificate_name: Optional[str] = None
     status: str
     jira_ticket_key: Optional[str] = None
     notes: Optional[str] = None

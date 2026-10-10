@@ -231,3 +231,10 @@ def test_api_certificate_risk_and_404(client, admin_headers, serving):
     assert r["tier"] == "critical" and r["floor_reason"] == "certificate is expired"
     assert client.get("/api/risk/certificates/nope", headers=admin_headers).status_code == 404
     assert client.get("/api/risk/model").status_code == 401
+
+
+@pytest.mark.parametrize("prob,tier", [(0.055, "low"), (0.099, "low"), (0.10, "medium"), (0.19, "medium"),
+                                       (0.20, "high"), (0.39, "high"), (0.40, "critical"), (0.99, "critical")])
+def test_tier_boundaries_sit_above_the_base_rate(prob, tier):
+    """A typical healthy certificate (~5.5%, near the 5.8% base rate) must not be labelled medium."""
+    assert scoring.tier_for(prob) == tier

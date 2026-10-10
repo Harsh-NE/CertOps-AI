@@ -133,6 +133,10 @@ class RenewalTask(Base):
     created_at = Column(UtcDateTime, default=utcnow)
     completed_at = Column(UtcDateTime, nullable=True)
 
+    @property
+    def certificate_name(self):
+        return self.certificate.common_name if self.certificate else None
+
 
 class ScanLog(Base):
     __tablename__ = "scan_logs"

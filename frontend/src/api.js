@@ -8,4 +8,16 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+// An expired or invalid token sends the user back to the login screen.
+api.interceptors.response.use(
+  (r) => r,
+  (error) => {
+    if (error.response?.status === 401 && localStorage.getItem('token')) {
+      localStorage.removeItem('token')
+      window.dispatchEvent(new Event('storage'))
+    }
+    return Promise.reject(error)
+  },
+)
+
 export default api

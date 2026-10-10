@@ -58,7 +58,8 @@ importance. Results: `docs/results/risk_eval.md` (generated, includes the comman
 
 * Synthetic data; no claim about real-world accuracy. Real use requires retraining on labelled history (renewal
   tasks, scan history, incident tickets) through the same `build_features` path.
-* Probability tiers (`low < 5% <= medium < 15% <= high < 40% <= critical`) are a policy choice, not derived.
+* Probability tiers (`low < 10% <= medium < 20% <= high < 40% <= critical`) are a policy choice set relative to the ~6% base rate,
+  not derived. They were 5/15/40% until browser testing showed a healthy certificate at 5.5% labelled MEDIUM.
 * Explanations are one-feature-at-a-time ablations (not SHAP) and attribute interactions crudely.
 * The artifact is a pickle (joblib): only load files you produced.
 * `predicted_outage_impact` is a rule (blast radius from environment and expiry), not a model output.

@@ -35,6 +35,9 @@ def bootstrap_admin() -> None:
 async def lifespan(app: FastAPI):
     settings.resolved_secret_key()  # fail fast on a missing/placeholder key outside development
     bootstrap_admin()
+    if settings.AI_AGENT_ENABLED:  # pay the slow LangChain import in the background, not on the first user request
+        import threading
+        threading.Thread(target=lambda: __import__("app.agent.agent"), daemon=True).start()
     if settings.SCHEDULER_ENABLED:
         start_scheduler()
     yield
@@ -49,6 +52,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Total-Count"],
 )
 
 for r in (auth, certificates, owners, renewals, risk, agent, cloud, jobs):

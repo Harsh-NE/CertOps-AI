@@ -60,3 +60,27 @@ def certificate_risk(cert_id: str, db: Session = Depends(get_db), user=Depends(g
     if not cert:
         raise HTTPException(404, "Certificate not found")
     return score_certificate(db, cert)
+
+
+TIMELINE_BUCKETS = [("expired", None, -1), ("0-7 d", 0, 7), ("8-14 d", 8, 14), ("15-30 d", 15, 30),
+                    ("31-60 d", 31, 60), ("61-90 d", 61, 90), ("> 90 d", 91, None)]
+
+
+@router.get("/expiry-timeline")
+def expiry_timeline(environment: str | None = None, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    """Certificates per time-to-expiry bucket, split by risk tier (for the dashboard chart)."""
+    q = db.query(models.Certificate.not_after, models.Certificate.risk_tier)
+    if environment:
+        q = q.filter(models.Certificate.environment == environment.lower())
+    buckets = [{"label": label, "low": 0, "medium": 0, "high": 0, "critical": 0, "unscored": 0, "total": 0}
+               for label, _, _ in TIMELINE_BUCKETS]
+    for not_after, tier in q.all():
+        d = days_until(not_after)
+        if d is None:
+            continue
+        for b, (_, lo, hi) in zip(buckets, TIMELINE_BUCKETS, strict=True):
+            if (lo is None or d >= lo) and (hi is None or d <= hi):
+                b[tier.value if tier else "unscored"] += 1
+                b["total"] += 1
+                break
+    return {"buckets": buckets}

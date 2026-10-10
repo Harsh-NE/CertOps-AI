@@ -100,3 +100,28 @@ def test_agent_without_a_key_says_so(client, admin_headers, monkeypatch):
     body = client.post("/api/agent/query", json={"question": "hello"}, headers=admin_headers).json()
     assert body["configured"] is False and "GEMINI_API_KEY" in body["answer"]
     assert client.get("/api/health").json()["ai_agent_enabled"] in (True, False)
+
+
+def test_unconfigured_agent_answers_without_loading_the_agent_stack(client, admin_headers, monkeypatch):
+    def boom(*a, **k):
+        raise AssertionError("run_agent_query must not be reached without a model")
+
+    monkeypatch.setattr("app.agent.llm.get_chat_model", lambda model=None: None)
+    monkeypatch.setattr("app.agent.agent.run_agent_query", boom)
+    body = client.post("/api/agent/query", json={"question": "hi"}, headers=admin_headers).json()
+    assert body["configured"] is False and body["used_tools"] == []
+
+
+def test_changing_the_renewal_provider_refreshes_the_stored_risk_score(client, admin_headers):
+    from datetime import timedelta
+
+    from app.timeutil import utcnow
+    db = SessionLocal()
+    c = models.Certificate(common_name="rescore.test", not_after=utcnow() + timedelta(days=5), risk_score=-1.0)
+    db.add(c)
+    db.commit()
+    cid = c.id
+    db.close()
+    r = client.post(f"/api/certificates/{cid}/toggle-auto-renew?provider=letsencrypt", headers=admin_headers).json()
+    assert r["auto_renew_enabled"] is True and r["renewal_provider"] == "letsencrypt"
+    assert r["risk_score"] != -1.0 and r["last_validated_at"] is not None

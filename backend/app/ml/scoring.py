@@ -16,11 +16,12 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.ml.features import FEATURES, build_features, to_frame
-from app.ml.train import DEFAULT_ARTIFACT
+from app.ml.paths import DEFAULT_ARTIFACT
 from app.timeutil import days_until
 
-# Policy (not statistically derived): tiers on the calibrated probability. Base rate in training data is ~6%.
-TIER_BOUNDS = [(0.05, "low"), (0.15, "medium"), (0.40, "high")]  # >= 0.40 -> critical
+# Policy (not statistically derived): tiers on the calibrated probability, set relative to the ~6% base rate
+# in the training data (low = under ~1.7x base rate, medium = under ~3.5x, high = under 40%).
+TIER_BOUNDS = [(0.10, "low"), (0.20, "medium"), (0.40, "high")]  # >= 0.40 -> critical
 FLOORS = {  # certificate state -> (minimum tier, minimum probability)
     models.CertStatus.REVOKED: ("critical", 0.95),
     models.CertStatus.EXPIRED: ("critical", 0.95),

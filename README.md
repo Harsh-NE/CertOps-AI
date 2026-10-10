@@ -23,6 +23,7 @@ project — but structured like a real production service, not a toy script.
 | Scheduled monitoring | **Real** | Retry/backoff and persisted run state (`job_runs`) are unit-tested; scheduler wiring itself is not |
 | Risk model (scikit-learn gradient boosting) | **Real model, trained and evaluated on SYNTHETIC data only**; no real-world accuracy claim | `python -m app.ml.evaluate` |
 | LangChain agent (Gemini) | **Real agent graph, guardrails and audit; live Gemini path NOT yet run** (no API key available during development) | 28-case eval; `python -m app.agent.eval` |
+| Frontend (React) | **Working; verified manually in a browser** (login, role-based UI, dashboard charts, filtered inventory, plan -> approve -> real Pebble renewal, history, sources). Automated component tests: Phase 6 | `npm run build`; manual walkthrough |
 | Renewal: ACME + Vault | **Real**, verified against a local Pebble CA and dev-mode Vault; human approval required; Let's Encrypt staging/production NOT exercised; deploying the new cert is not automated | `RENEWAL_INTEGRATION=1 pytest tests/integration` |
 | Renewal: AWS ACM | **Not executable** by design (ACM cannot be force-renewed); plans say so | unit tests |
 
@@ -112,9 +113,10 @@ At the F1-optimal threshold the model is essentially tied with the days-to-expir
 
 ## Agent evaluation
 
-> **What this number is.** The offline run uses a *keyword stand-in* instead of an LLM, so it measures the tool layer,
-> guardrails (human approval gate, role restrictions, allow-list, audit) and answer plumbing. It does **not** measure
-> how well Gemini chooses tools; that requires a live or recorded run (see [docs/agent.md](docs/agent.md)).
+> **Read this before quoting any agent number.** The scripted result below is evidence of *tested workflow behavior*
+> (tool layer, human-approval gate, role restrictions, allow-list, audit), **not real-model accuracy**. A keyword
+> stand-in chose the tools, so it says nothing about how well Gemini selects tools or answers. Live-model results will
+> be reported in their own row and never merged with the scripted one. As of now, **no live Gemini evaluation has been run.**
 
 Reproduce: `cd backend && python -m app.agent.eval --docs ../docs/results`
 

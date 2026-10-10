@@ -37,9 +37,26 @@ def _fail(e: RenewalError):
 
 
 @router.get("", response_model=List[schemas.RenewalTaskOut])
-def list_renewal_tasks(db: Session = Depends(get_db), user=Depends(get_current_user)):
+def list_renewal_tasks(
+    certificate_id: Optional[str] = None,
+    status: Optional[str] = None,
+    include_dry_runs: bool = True,
+    limit: int = 200,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
     """Renewal history: dry runs, executions, tickets."""
-    return db.query(models.RenewalTask).order_by(models.RenewalTask.created_at.desc()).all()
+    q = db.query(models.RenewalTask)
+    if certificate_id:
+        q = q.filter(models.RenewalTask.certificate_id == certificate_id)
+    if status:
+        try:
+            q = q.filter(models.RenewalTask.status == models.RenewalTaskStatus(status))
+        except ValueError as e:
+            raise HTTPException(422, f"invalid status: {e}") from e
+    if not include_dry_runs:
+        q = q.filter(models.RenewalTask.dry_run.isnot(True))
+    return q.order_by(models.RenewalTask.created_at.desc()).limit(min(limit, 500)).all()
 
 
 @router.post("/{cert_id}/create-ticket", response_model=schemas.RenewalTaskOut)

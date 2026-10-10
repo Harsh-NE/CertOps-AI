@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.agent.agent import run_agent_query
+from app.agent import llm
 from app.agent.tools import READ_ONLY_TOOLS
 from app.auth import get_current_user, require_role
 from app.database import get_db
@@ -22,7 +22,14 @@ def query_agent(payload: schemas.AgentQueryRequest, user=Depends(get_current_use
     """
     actor = Actor(kind="agent", name=user.username, role=user.role, on_behalf_of=user.username)
     allowed = None if user.role in ("operator", "admin") else READ_ONLY_TOOLS
-    result = run_agent_query(payload.question, actor, allowed_tools=allowed)
+    model = llm.get_chat_model()
+    if model is None:  # no key: answer immediately, without loading LangChain
+        return schemas.AgentQueryResponse(
+            answer=("The AI agent is not configured: set GEMINI_API_KEY in .env to enable natural-language queries. "
+                    "The structured API endpoints work without it."), configured=False)
+    from app.agent.agent import run_agent_query  # imported lazily: LangChain is slow to load
+
+    result = run_agent_query(payload.question, actor, model=model, allowed_tools=allowed)
     result.pop("tool_results", None)  # full payloads stay server-side; the audit table keeps summaries
     return schemas.AgentQueryResponse(**result)
 

@@ -20,9 +20,9 @@ import sklearn  # noqa: E402
 
 from app.ml.evaluate import run_evaluation, write_docs  # noqa: E402
 from app.ml.features import BINARY, CATEGORICAL, FEATURES, NUMERIC  # noqa: E402
+from app.ml.paths import DEFAULT_ARTIFACT  # noqa: E402
 from app.ml.simulator import HORIZON_DAYS, SIM_VERSION  # noqa: E402
 
-DEFAULT_ARTIFACT = Path(__file__).resolve().parents[1] / "ml_models" / "risk_model.joblib"
 DISCLAIMER = ("Trained on SYNTHETIC data from a simulator. Metrics describe recovery of the simulator's structure, "
               "not accuracy on real certificate incidents.")
 
