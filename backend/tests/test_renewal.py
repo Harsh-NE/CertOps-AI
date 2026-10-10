@@ -187,3 +187,36 @@ def test_certificate_without_provider_cannot_be_planned(env):
 
 def test_secret_store_errors_are_a_distinct_type():
     assert issubclass(SecretStoreError, Exception) and FakeRenewalExecutor().name == "letsencrypt"
+
+
+def test_repeated_plan_requests_reuse_the_open_plan(env):
+    db, fx, cert, ex = env
+    s = svc(env)
+    first = s.plan(cert, Actor("agent", "alice"))
+    again = s.plan(cert, Actor("agent", "alice"))
+    assert again.id == first.id
+    assert db.query(models.RenewalPlan).filter_by(certificate_id=cert.id).count() == 1
+    assert db.query(models.RenewalTask).filter_by(certificate_id=cert.id, dry_run=True).count() == 1  # no history spam
+
+
+def test_an_actor_cannot_flood_the_approval_queue(env, monkeypatch):
+    from app.config import settings
+    db, fx, cert, ex = env
+    monkeypatch.setattr(settings, "RENEWAL_MAX_OPEN_PLANS_PER_ACTOR", 2)
+    s = svc(env)
+    agent = Actor("agent", "mallory")
+    ids = [fx["ids"][k] for k in ("pay", "checkout", "legacy")]
+    s.plan(db.get(models.Certificate, ids[0]), agent)
+    s.plan(db.get(models.Certificate, ids[1]), agent)
+    with pytest.raises(RenewalError) as e:
+        s.plan(db.get(models.Certificate, ids[2]), agent)
+    assert e.value.code == "too_many_open_plans"
+    s.plan(db.get(models.Certificate, ids[2]), Actor("agent", "someone-else"))  # other actors are unaffected
+
+
+def test_a_finished_plan_does_not_block_a_new_one(env):
+    db, fx, cert, ex = env
+    s = svc(env)
+    first = s.plan(cert, HUMAN)
+    s.reject(first.id, HUMAN)
+    assert s.plan(cert, HUMAN).id != first.id

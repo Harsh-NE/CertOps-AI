@@ -71,9 +71,24 @@ class RenewalService:
         if executor is None:
             raise RenewalError("unknown_provider", f"Unknown renewal provider '{cert.renewal_provider}'")
         spec = executor.plan(cert)
+        digest = compute_hash(cert, cert.renewal_provider, spec.params)
+        open_states = (models.RenewalPlanStatus.PENDING_APPROVAL, models.RenewalPlanStatus.APPROVED)
+        existing = (self.db.query(models.RenewalPlan)
+                    .filter(models.RenewalPlan.certificate_id == cert.id, models.RenewalPlan.plan_hash == digest,
+                            models.RenewalPlan.status.in_(open_states), models.RenewalPlan.expires_at > utcnow())
+                    .first())
+        if existing is not None:  # idempotent: repeated requests (or a looping agent) reuse the open plan
+            return existing
+        pending_by_actor = (self.db.query(models.RenewalPlan)
+                            .filter(models.RenewalPlan.created_by == actor.label,
+                                    models.RenewalPlan.status == models.RenewalPlanStatus.PENDING_APPROVAL,
+                                    models.RenewalPlan.expires_at > utcnow()).count())
+        if pending_by_actor >= settings.RENEWAL_MAX_OPEN_PLANS_PER_ACTOR:
+            raise RenewalError("too_many_open_plans", f"{actor.label} already has {pending_by_actor} plans awaiting "
+                               "approval; an operator must approve or reject some first")
         plan = models.RenewalPlan(
             certificate_id=cert.id, provider=cert.renewal_provider, params=json.dumps(spec.params),
-            plan_hash=compute_hash(cert, cert.renewal_provider, spec.params), steps=json.dumps(spec.steps),
+            plan_hash=digest, steps=json.dumps(spec.steps),
             warnings=json.dumps(spec.warnings), executable=spec.executable,
             not_executable_reason=spec.not_executable_reason, created_by=actor.label,
             expires_at=utcnow() + timedelta(minutes=settings.RENEWAL_PLAN_TTL_MINUTES))

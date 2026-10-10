@@ -79,6 +79,7 @@ class Settings(BaseSettings):
 
     # --- Renewal ---
     RENEWAL_PLAN_TTL_MINUTES: int = 15
+    RENEWAL_MAX_OPEN_PLANS_PER_ACTOR: int = 20  # caps the approval queue a (possibly looping) agent can create
     LETSENCRYPT_EMAIL: Optional[str] = None
     # Default is Let's Encrypt STAGING. For local tests use Pebble: https://localhost:14000/dir
     ACME_DIRECTORY_URL: str = "https://acme-staging-v02.api.letsencrypt.org/directory"
