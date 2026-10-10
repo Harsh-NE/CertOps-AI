@@ -18,10 +18,13 @@ export default function CertificateDetail() {
   const [cert, setCert] = useState(null)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
+  const [validation, setValidation] = useState(null)
 
   async function load() {
     const res = await api.get(`/certificates/${id}`)
     setCert(res.data)
+    const v = await api.get(`/certificates/${id}/validation`, { params: { limit: 1 } })
+    setValidation(v.data[0] || null)
   }
   useEffect(() => { load() }, [id])
 
@@ -30,7 +33,8 @@ export default function CertificateDetail() {
     try {
       const res = await api.post(`/certificates/${id}/rescore`)
       setCert(res.data)
-      setMsg({ ok: true, text: 'Re-scored.' })
+      await load()
+      setMsg({ ok: true, text: 'Re-validated from stored data.' })
     } finally { setBusy(false) }
   }
 
@@ -116,6 +120,17 @@ Perform the REAL renewal now?`)
         <Row label="Risk tier" value={cert.risk_tier} />
         <Row label="Predicted renewal delay" value={cert.predicted_renewal_delay_days ? `${cert.predicted_renewal_delay_days} days` : null} />
         <Row label="Predicted outage impact" value={cert.predicted_outage_impact} />
+      </div>
+
+      <div className="card">
+        <h2 className="text-sm font-medium mb-2">Validation {validation && <span className="text-muted">({validation.overall}, checked {new Date(validation.checked_at).toLocaleString()})</span>}</h2>
+        {!validation && <p className="text-muted text-sm">Not validated yet.</p>}
+        {validation && validation.findings.length === 0 && <p className="text-accent2 text-sm">All checks passed.</p>}
+        {validation && validation.findings.map((f, i) => (
+          <p key={i} className={`text-sm py-1 ${f.severity === 'error' ? 'text-danger' : f.severity === 'warning' ? 'text-warn' : 'text-muted'}`}>
+            [{f.severity}] {f.message}
+          </p>
+        ))}
       </div>
 
       <div className="card">

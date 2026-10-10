@@ -21,6 +21,8 @@ bcrypt==4.0.1   # passlib 1.7.4 breaks with bcrypt >= 4.1/5, keep pinned
 
 # --- Certificates ---
 cryptography==50.0.0
+pyOpenSSL==26.4.0   # presented-chain access on Python < 3.13
+certifi==2026.7.22   # trust anchors (Mozilla CA bundle)
 requests==2.33.0
 PyYAML==6.0.1
 

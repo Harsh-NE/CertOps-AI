@@ -4,7 +4,7 @@ Auto-Renewal Engine.
 Three providers, each independent and best-effort:
   - Let's Encrypt (ACME protocol) for publicly-issued certs
   - HashiCorp Vault PKI secrets engine for internal/private CAs
-  - AWS ACM (see cloud_connectors/aws_acm.py::request_renewal - ACM renews
+  - AWS ACM (see providers/aws_acm.py::request_renewal - ACM renews
     eligible certs automatically; this module just triggers/confirms it)
 
 All renewal attempts are recorded as RenewalTask rows by the caller
@@ -87,7 +87,7 @@ def renew_via_vault(pki_role: str, common_name: str, ttl: str = "8760h") -> Dict
 
 
 def renew_via_aws_acm(certificate_arn: str) -> Dict[str, Any]:
-    from app.services.cloud_connectors.aws_acm import request_renewal
+    from app.providers.aws_acm import request_renewal
     return request_renewal(certificate_arn)
 
 

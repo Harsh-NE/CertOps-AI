@@ -7,8 +7,8 @@ from app import models, schemas
 from app.auth import get_current_user, require_role
 from app.database import get_db
 from app.services.auto_renewal import trigger_renewal
-from app.services.cert_scanner import days_until_expiry
 from app.services.notifications.jira import create_renewal_ticket
+from app.timeutil import days_until as days_until_expiry
 
 router = APIRouter(prefix="/api/renewals", tags=["renewals"])
 

@@ -56,7 +56,7 @@ export default function Certificates() {
         <form onSubmit={runScan} className="flex items-center gap-2">
           <input
             className="bg-panel2 border border-border rounded-lg px-3 py-2 text-sm w-72 outline-none focus:border-accent"
-            placeholder="host:port, e.g. app1.lab.local:8443"
+            placeholder="host:port[#server_name], e.g. 127.0.0.1:9441#healthy.lab.test"
             value={scanTarget}
             onChange={(e) => setScanTarget(e.target.value)}
           />

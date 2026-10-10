@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict
 
@@ -34,6 +34,7 @@ class CertificateBase(BaseModel):
     chain_depth: Optional[int] = None
     environment: Optional[str] = None
     fingerprint_sha256: Optional[str] = None
+    expected_hostname: Optional[str] = None
 
 
 class CertificateOut(CertificateBase):
@@ -53,12 +54,54 @@ class CertificateOut(CertificateBase):
     renewal_provider: Optional[str] = None
     owner: Optional[OwnerOut] = None
     last_scanned_at: Optional[datetime] = None
+    last_validated_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 
 
+class TargetIn(BaseModel):
+    host: str
+    port: int = 443
+    server_name: Optional[str] = None
+    environment: Optional[str] = None
+
+
 class ScanTargetRequest(BaseModel):
-    targets: List[str]  # e.g. ["api.example.com:443", "example.com"]
+    # "host", "host:port", "host:port#server_name", or a structured target
+    targets: List[Union[str, TargetIn]]
+
+
+class ScanTargetOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    host: str
+    port: int
+    server_name: Optional[str] = None
+    environment: Optional[str] = None
+    enabled: bool
+    last_scanned_at: Optional[datetime] = None
+    last_error: Optional[str] = None
+
+
+class JobRunOut(BaseModel):
+    id: str
+    provider: str
+    status: str
+    attempts: int
+    discovered: int
+    errors: List[str]
+    triggered_by: str
+    started_at: datetime
+    finished_at: Optional[datetime] = None
+
+
+class ValidationOut(BaseModel):
+    id: str
+    checked_at: datetime
+    overall: str
+    chain_valid: Optional[bool] = None
+    revoked: Optional[bool] = None
+    findings: List[Dict[str, Any]]
 
 
 class CloudScanRequest(BaseModel):

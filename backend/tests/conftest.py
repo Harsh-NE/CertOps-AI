@@ -16,6 +16,8 @@ os.environ.update({
     "ADMIN_USERNAME": "admin",
     "ADMIN_PASSWORD": "admin-pass-for-tests",
     "ALLOW_REGISTRATION": "false",
+    "ALLOW_PRIVATE_TARGETS": "true",  # tests talk to 127.0.0.1; test_netguard resets this explicitly
+    "JOB_BACKOFF_SECONDS": "0",
     "ENV": "test",
 })
 
@@ -42,16 +44,18 @@ def make_cert(cn="test.example", days_from=-1, days_to=90, key=None, sans=None):
     return key, cert
 
 
-def serve_tls(key, cert):
-    """Serve `cert` on 127.0.0.1:<random port> in a daemon thread; returns the port."""
+def serve_tls(key, cert, *chain, weak: bool = False):
+    """Serve `cert` (+ optional intermediates) on 127.0.0.1:<random port> in a daemon thread; returns the port."""
     d = tempfile.mkdtemp(dir=_TMP)
     cp, kp = os.path.join(d, "c.pem"), os.path.join(d, "k.pem")
     with open(cp, "wb") as f:
-        f.write(cert.public_bytes(serialization.Encoding.PEM))
+        f.write(b"".join(c.public_bytes(serialization.Encoding.PEM) for c in (cert, *chain)))
     with open(kp, "wb") as f:
         f.write(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.TraditionalOpenSSL,
                                   serialization.NoEncryption()))
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    if weak:
+        ctx.set_ciphers("ALL:@SECLEVEL=0")  # allow serving a 1024-bit key
     ctx.load_cert_chain(cp, kp)
     sock = socket.socket()
     sock.bind(("127.0.0.1", 0))
@@ -72,11 +76,15 @@ def serve_tls(key, cert):
     return sock.getsockname()[1]
 
 
-@pytest.fixture(scope="session")
-def client():
+@pytest.fixture(scope="session", autouse=True)
+def _create_tables():
     from app import models  # noqa: F401
     from app.database import Base, engine
     Base.metadata.create_all(bind=engine)
+
+
+@pytest.fixture(scope="session")
+def client(_create_tables):
     from app.main import app
     with TestClient(app) as c:  # runs lifespan: bootstraps the admin user
         yield c

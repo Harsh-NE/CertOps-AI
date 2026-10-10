@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import SessionLocal
-from app.routers import agent, auth, certificates, cloud, owners, renewals, risk
+from app.routers import agent, auth, certificates, cloud, jobs, owners, renewals, risk
 from app.scheduler import start_scheduler, stop_scheduler
 
 logging.basicConfig(level=logging.INFO)
@@ -51,7 +51,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for r in (auth, certificates, owners, renewals, risk, agent, cloud):
+for r in (auth, certificates, owners, renewals, risk, agent, cloud, jobs):
     app.include_router(r.router)
 
 

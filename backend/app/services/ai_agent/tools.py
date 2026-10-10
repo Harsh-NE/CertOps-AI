@@ -11,7 +11,7 @@ from langchain.tools import tool
 from sqlalchemy.orm import Session
 
 from app import models
-from app.services.cert_scanner import days_until_expiry
+from app.timeutil import days_until as days_until_expiry
 from app.timeutil import utcnow
 
 

@@ -35,6 +35,14 @@ class Settings(BaseSettings):
     ADMIN_PASSWORD: Optional[str] = None
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"  # comma-separated
 
+    # --- Network safety / validation ---
+    ALLOW_PRIVATE_TARGETS: bool = False  # scanning/OCSP to loopback/private IPs (lab only)
+    TRUST_STORE_EXTRA_PEM: Optional[str] = None  # extra root CAs (PEM bundle path), e.g. the lab CA
+    OCSP_ENABLED: bool = True
+    NETWORK_TIMEOUT_SECONDS: float = 5.0
+    JOB_MAX_ATTEMPTS: int = 3
+    JOB_BACKOFF_SECONDS: float = 2.0
+
     # --- Scheduler ---
     SCHEDULER_ENABLED: bool = True
     SCAN_INTERVAL_HOURS: int = 24

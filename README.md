@@ -12,11 +12,14 @@ project — but structured like a real production service, not a toy script.
 
 ## Current status
 
-| Area | Status |
-|---|---|
-| Network TLS scan, expiry, key size/algorithm, signature algorithm | Working (tested against local TLS servers) |
-| Chain / trust validation, revocation | **Not implemented yet** (`chain_valid` is reported as unknown, never as valid). Phase 2 |
-| AWS ACM / Azure Key Vault / GCP / Kubernetes discovery | Code exists, **untested** end to end. Phase 2 |
+| Area | Status | How it is tested |
+|---|---|---|
+| Network TLS discovery (presented chain, SNI) | **Real** | Live local TLS servers |
+| Validation: expiry, hostname, key size/algorithm, weak signature, self-signed, trust path, revocation (OCSP) | **Real** | 33 unit tests + lab scenarios; OCSP against a local responder |
+| AWS ACM | **Real code, tested against moto** | moto mock; never run against a real AWS account |
+| Kubernetes (`kubernetes.io/tls` Secrets, cert-manager `Certificate` status) | **Real client code, fake-client tests** | Real-cluster test exists (`tests/integration`) but has not been run yet |
+| Azure Key Vault, GCP Certificate Manager | **Simulated** | Fake clients shaped like the SDK responses; never run against Azure/GCP |
+| Scheduled monitoring | **Real** | Retry/backoff and persisted run state (`job_runs`) are unit-tested; scheduler wiring itself is not |
 | Risk model | Trains on **synthetic** data; no real-world accuracy claim. Phase 3 |
 | LangChain agent | Tools work; the LLM loop is untested. Phase 4 |
 | Renewal | Dry-run by default; a real renewal needs `confirm=true`. Let's Encrypt/Vault flows are unverified. Phase 4 |
@@ -88,10 +91,34 @@ cert-platform/
 └── README.md           <- you are here
 ```
 
-## Lab environment
+## Local certificate lab
 
-`lab/` (openssl CA + nginx) is **currently out of sync**: `generate_certs.sh` creates `app1`-`app5` while the nginx
-configs and `seed_lab_data.py` expect `legacy` and `api`. It is replaced by generated test fixtures in Phase 2.
+`python -m app.devtools.lab` (from `backend/`) generates a private PKI and serves 11 TLS endpoints on
+`127.0.0.1:9441-9451`, each with a different problem, plus a local OCSP responder. No Docker, hosts-file edits or
+openssl are needed. The expected result for each is asserted by `tests/test_lab.py`.
+
+| Endpoint (SNI) | Problem | Expected status |
+|---|---|---|
+| healthy.lab.test | none | valid |
+| expiring.lab.test | expires in 3 days | expiring_soon |
+| expired.lab.test | expired 10 days ago | expired |
+| wrong-host.lab.test | certificate is for another name | hostname_mismatch |
+| selfsigned.lab.test | self-signed | invalid_chain |
+| nochain.lab.test | server omits the intermediate | invalid_chain |
+| legacy.lab.test | RSA-1024 key | weak_crypto |
+| rogue.lab.test | issued by an untrusted CA | invalid_chain |
+| app.wild.lab.test | wildcard cert | valid |
+| ocsp-good.lab.test / ocsp-revoked.lab.test | OCSP says good / revoked | valid / revoked |
+
+```bash
+# terminal 1: serve the lab and register the endpoints as scan targets
+cd backend && python -m app.devtools.lab
+# terminal 2: run the API trusting the lab CA, then POST /api/cloud/discover {"providers": ["network_scan"]}
+ALLOW_PRIVATE_TARGETS=true TRUST_STORE_EXTRA_PEM=../lab/certs/ca.pem uvicorn app.main:app
+```
+For the Docker stack: run the lab with `--bind 0.0.0.0 --advertise-host host.docker.internal --out ../lab/certs
+--no-register`, then `docker compose -f docker-compose.yml -f docker-compose.lab.yml up --build`.
+`ALLOW_PRIVATE_TARGETS` turns off the SSRF guard (loopback/private addresses are refused by default); use it only in a lab.
 
 ## Using the AI agent
 

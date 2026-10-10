@@ -1,18 +1,18 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
-from cryptography.hazmat.primitives import serialization
 
 from app.config import Settings
-from app.services.cert_scanner import parse_certificate
-from app.timeutil import days_until, to_naive_utc, utcnow
+from app.providers.normalize import normalize_x509
+from app.timeutil import days_until, ensure_utc, utcnow
 from tests.conftest import make_cert
 
 
-def test_to_naive_utc_converts_aware_datetimes():
+def test_ensure_utc_converts_and_assumes_naive_is_utc():
     aware = datetime(2030, 1, 1, 12, 0, tzinfo=timezone(timedelta(hours=5)))
-    assert to_naive_utc(aware) == datetime(2030, 1, 1, 7, 0)
-    assert to_naive_utc(None) is None
+    assert ensure_utc(aware) == datetime(2030, 1, 1, 7, 0, tzinfo=UTC)
+    assert ensure_utc(datetime(2030, 1, 1, 7, 0)).tzinfo is not None
+    assert ensure_utc(None) is None
 
 
 def test_days_until():
@@ -21,11 +21,11 @@ def test_days_until():
     assert days_until(None) is None
 
 
-def test_parse_certificate_ec_key(ec_key):
+def test_normalize_ec_certificate(ec_key):
     _, cert = make_cert("ec.test", key=ec_key)
-    parsed = parse_certificate(cert.public_bytes(serialization.Encoding.DER))
-    assert parsed["key_algorithm"] == "EC" and parsed["key_size"] == 256
-    assert parsed["not_after"].tzinfo is None  # normalised to naive UTC
+    n = normalize_x509(cert, provider="network_scan", source_ref="x")
+    assert n.key_algorithm == "EC" and n.key_size == 256 and n.signature_hash == "sha256"
+    assert n.not_after.tzinfo is not None and len(n.fingerprint_sha256) == 64
 
 
 def test_production_requires_secret_key():
