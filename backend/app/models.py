@@ -1,12 +1,12 @@
 import enum
 import uuid
-from datetime import datetime
 
-from sqlalchemy import (
-    Column, String, DateTime, Integer, Float, Boolean, ForeignKey, Text, Enum
-)
+from sqlalchemy import Boolean, Column, Enum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
+
 from app.database import Base
+from app.dbtypes import UtcDateTime
+from app.timeutil import utcnow
 
 
 def gen_uuid():
@@ -28,6 +28,8 @@ class CertStatus(str, enum.Enum):
     EXPIRED = "expired"
     REVOKED = "revoked"
     INVALID_CHAIN = "invalid_chain"
+    HOSTNAME_MISMATCH = "hostname_mismatch"
+    WEAK_CRYPTO = "weak_crypto"
     UNKNOWN = "unknown"
 
 
@@ -54,21 +56,30 @@ class Certificate(Base):
     __tablename__ = "certificates"
     id = Column(String, primary_key=True, default=gen_uuid)
 
+    # Identity: SHA-256 of the DER bytes when known; source+source_ref locate it in its provider.
+    fingerprint_sha256 = Column(String, index=True, nullable=True)
     common_name = Column(String, index=True, nullable=False)
     san_list = Column(Text, nullable=True)  # JSON-encoded list
     issuer = Column(String, nullable=True)
     subject = Column(String, nullable=True)
     serial_number = Column(String, nullable=True)
     signature_algorithm = Column(String, nullable=True)
+    key_algorithm = Column(String, nullable=True)  # RSA | EC | Ed25519 ...
     key_size = Column(Integer, nullable=True)
+    is_wildcard = Column(Boolean, default=False)
+    chain_depth = Column(Integer, nullable=True)  # certs presented/validated, leaf included
+    expected_hostname = Column(String, nullable=True)  # name the endpoint should serve (network targets)
+    chain_pem = Column(Text, nullable=True)  # presented chain, leaf first (public certs only)
+    last_validated_at = Column(UtcDateTime, nullable=True)
+    environment = Column(String, index=True, nullable=True)  # prod | staging | dev ... (from tags/labels)
 
-    not_before = Column(DateTime, nullable=True)
-    not_after = Column(DateTime, nullable=True)
+    not_before = Column(UtcDateTime, nullable=True)
+    not_after = Column(UtcDateTime, nullable=True)
 
     source = Column(Enum(SourceType), default=SourceType.NETWORK_SCAN)
-    source_ref = Column(String, nullable=True)  # ARN / vault URL / secret name / host:port
+    source_ref = Column(String, index=True, nullable=True)  # ARN / vault URL / secret name / host:port
 
-    chain_valid = Column(Boolean, default=None, nullable=True)
+    chain_valid = Column(Boolean, default=None, nullable=True)  # None = not validated (yet)
     revoked = Column(Boolean, default=None, nullable=True)
     revocation_check_method = Column(String, nullable=True)  # OCSP | CRL | none
 
@@ -85,12 +96,13 @@ class Certificate(Base):
     owner_id = Column(String, ForeignKey("owners.id"), nullable=True)
     owner = relationship("Owner", back_populates="certificates")
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    last_scanned_at = Column(DateTime, nullable=True)
+    created_at = Column(UtcDateTime, default=utcnow)
+    updated_at = Column(UtcDateTime, default=utcnow, onupdate=utcnow)
+    last_scanned_at = Column(UtcDateTime, nullable=True)
 
     renewal_tasks = relationship("RenewalTask", back_populates="certificate")
     scan_logs = relationship("ScanLog", back_populates="certificate")
+    validations = relationship("ValidationResult", back_populates="certificate", order_by="ValidationResult.checked_at.desc()")
 
 
 class RenewalTaskStatus(str, enum.Enum):
@@ -100,6 +112,8 @@ class RenewalTaskStatus(str, enum.Enum):
     AUTO_RENEWED = "auto_renewed"
     COMPLETED = "completed"
     FAILED = "failed"
+    SKIPPED = "skipped"  # nothing was done (e.g. provider cannot force renewal)
+    DRY_RUN = "dry_run"  # simulated only, no change made
 
 
 class RenewalTask(Base):
@@ -112,8 +126,16 @@ class RenewalTask(Base):
     jira_ticket_key = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
     triggered_by = Column(String, default="scheduler")  # scheduler | agent | manual
-    created_at = Column(DateTime, default=datetime.utcnow)
-    completed_at = Column(DateTime, nullable=True)
+    provider = Column(String, nullable=True)  # letsencrypt | vault | aws_acm | jira
+    dry_run = Column(Boolean, default=False)
+    previous_serial = Column(String, nullable=True)
+    new_serial = Column(String, nullable=True)
+    created_at = Column(UtcDateTime, default=utcnow)
+    completed_at = Column(UtcDateTime, nullable=True)
+
+    @property
+    def certificate_name(self):
+        return self.certificate.common_name if self.certificate else None
 
 
 class ScanLog(Base):
@@ -125,7 +147,7 @@ class ScanLog(Base):
     target = Column(String, nullable=False)
     success = Column(Boolean, default=True)
     message = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(UtcDateTime, default=utcnow)
 
 
 class User(Base):
@@ -134,4 +156,104 @@ class User(Base):
     username = Column(String, unique=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     role = Column(String, default="viewer")  # admin | operator | viewer
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(UtcDateTime, default=utcnow)
+
+
+class ScanTarget(Base):
+    """A TLS endpoint the network provider monitors."""
+    __tablename__ = "scan_targets"
+    id = Column(String, primary_key=True, default=gen_uuid)
+    host = Column(String, nullable=False)
+    port = Column(Integer, nullable=False, default=443)
+    server_name = Column(String, nullable=True)  # SNI + hostname to validate; defaults to host
+    environment = Column(String, nullable=True)
+    enabled = Column(Boolean, default=True)
+    created_at = Column(UtcDateTime, default=utcnow)
+    last_scanned_at = Column(UtcDateTime, nullable=True)
+    last_error = Column(Text, nullable=True)
+
+
+class JobRunStatus(str, enum.Enum):
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    PARTIAL = "partial"  # some certificates/targets failed
+    FAILED = "failed"
+    SKIPPED = "skipped"  # provider not configured
+
+
+class JobRun(Base):
+    """Persisted record of every discovery/monitoring run, including retries."""
+    __tablename__ = "job_runs"
+    id = Column(String, primary_key=True, default=gen_uuid)
+    job = Column(String, nullable=False, default="discovery")
+    provider = Column(String, nullable=False, index=True)
+    status = Column(Enum(JobRunStatus), default=JobRunStatus.RUNNING)
+    attempts = Column(Integer, default=0)
+    discovered = Column(Integer, default=0)
+    errors = Column(Text, nullable=True)  # JSON list
+    triggered_by = Column(String, default="scheduler")
+    started_at = Column(UtcDateTime, default=utcnow)
+    finished_at = Column(UtcDateTime, nullable=True)
+
+
+class ValidationResult(Base):
+    __tablename__ = "validation_results"
+    id = Column(String, primary_key=True, default=gen_uuid)
+    certificate_id = Column(String, ForeignKey("certificates.id"), index=True, nullable=False)
+    certificate = relationship("Certificate", back_populates="validations")
+    checked_at = Column(UtcDateTime, default=utcnow, index=True)
+    overall = Column(String, nullable=False)  # pass | warn | fail
+    chain_valid = Column(Boolean, nullable=True)
+    revoked = Column(Boolean, nullable=True)
+    findings = Column(Text, nullable=False)  # JSON list of {check, severity, message, details}
+
+
+class RenewalPlanStatus(str, enum.Enum):
+    PENDING_APPROVAL = "pending_approval"
+    APPROVED = "approved"
+    EXECUTING = "executing"
+    EXECUTED = "executed"
+    FAILED = "failed"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+
+
+class RenewalPlan(Base):
+    """
+    A dry-run result that doubles as the confirmation object for a real renewal. Execution requires this row to be
+    APPROVED by a human (login), unexpired, unused, and unchanged (plan_hash binds certificate + provider + params).
+    """
+    __tablename__ = "renewal_plans"
+    id = Column(String, primary_key=True, default=gen_uuid)
+    certificate_id = Column(String, ForeignKey("certificates.id"), index=True, nullable=False)
+    certificate = relationship("Certificate")
+    provider = Column(String, nullable=False)
+    params = Column(Text, nullable=False)  # JSON, e.g. {"domains": [...]}
+    plan_hash = Column(String, nullable=False)
+    steps = Column(Text, nullable=False)  # JSON list of human-readable steps
+    warnings = Column(Text, nullable=True)  # JSON list
+    executable = Column(Boolean, default=True)
+    not_executable_reason = Column(String, nullable=True)
+    status = Column(Enum(RenewalPlanStatus), default=RenewalPlanStatus.PENDING_APPROVAL, index=True)
+    created_by = Column(String, nullable=False)  # "user:alice" | "agent:alice"
+    created_at = Column(UtcDateTime, default=utcnow)
+    expires_at = Column(UtcDateTime, nullable=False)
+    approved_by = Column(String, nullable=True)
+    approved_at = Column(UtcDateTime, nullable=True)
+    executed_at = Column(UtcDateTime, nullable=True)
+    result = Column(Text, nullable=True)  # JSON, secrets excluded
+    renewal_task_id = Column(String, nullable=True)
+
+
+class AgentToolCall(Base):
+    """Audit trail: every tool call the agent attempted, including denied ones."""
+    __tablename__ = "agent_tool_calls"
+    id = Column(String, primary_key=True, default=gen_uuid)
+    request_id = Column(String, index=True, nullable=False)
+    actor = Column(String, nullable=False)
+    tool = Column(String, nullable=False, index=True)
+    args = Column(Text, nullable=True)
+    status = Column(String, nullable=False)  # ok | error | denied | timeout | limit
+    duration_ms = Column(Integer, default=0)
+    summary = Column(Text, nullable=True)
+    created_at = Column(UtcDateTime, default=utcnow, index=True)

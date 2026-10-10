@@ -1,0 +1,7 @@
+-r requirements.txt
+pytest==8.2.2
+pytest-cov==5.0.0
+httpx==0.28.1
+ruff==0.5.5
+pip-audit==2.7.3
+moto[acm]==5.0.28

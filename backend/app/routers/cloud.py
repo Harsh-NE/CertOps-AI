@@ -1,40 +1,26 @@
-from typing import List
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.database import get_db
 from app import schemas
-from app.auth import get_current_user
-from app.services.pipeline import process_discovered_certificate
-from app.services.cloud_connectors import aws_acm, azure_keyvault, gcp_cert_manager, k8s_secrets
+from app.auth import require_role
+from app.database import get_db
+from app.jobs import run_provider_job
+from app.providers.registry import PROVIDER_NAMES, build_providers
 
 router = APIRouter(prefix="/api/cloud", tags=["cloud discovery"])
 
-CONNECTORS = {
-    "aws_acm": aws_acm.discover_certificates,
-    "azure_key_vault": azure_keyvault.discover_certificates,
-    "gcp_cert_manager": gcp_cert_manager.discover_certificates,
-    "kubernetes_secret": k8s_secrets.discover_certificates,
-}
-
 
 @router.post("/discover")
-def discover(payload: schemas.CloudScanRequest, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    """Run discovery against one or more configured cloud providers."""
+def discover(payload: schemas.CloudScanRequest, db: Session = Depends(get_db),
+             user=Depends(require_role("operator"))):
+    """Run discovery now for one or more providers (retries + persisted run state apply)."""
+    providers = build_providers(db)
     summary = {}
-    for provider in payload.providers:
-        fn = CONNECTORS.get(provider)
-        if not fn:
-            summary[provider] = {"error": "unknown provider"}
+    for name in payload.providers:
+        provider = providers.get(name)
+        if provider is None:
+            summary[name] = {"status": "failed", "discovered": 0,
+                             "errors": [f"unknown provider; choose from {PROVIDER_NAMES}"]}
             continue
-        raw_certs = fn()
-        processed, errors = [], []
-        for raw in raw_certs:
-            if "error" in raw:
-                errors.append(raw["error"])
-                continue
-            k8s_annotations = raw.pop("k8s_annotations", None)
-            cert = process_discovered_certificate(db, raw, k8s_annotations=k8s_annotations)
-            processed.append(cert.id)
-        summary[provider] = {"discovered": len(processed), "errors": errors}
+        summary[name] = run_provider_job(provider, triggered_by=f"user:{user.username}")
     return summary

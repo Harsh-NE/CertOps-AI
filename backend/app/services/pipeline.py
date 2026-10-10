@@ -1,29 +1,37 @@
 """
-Orchestration pipeline: given a discovered certificate (from network scan or
-a cloud connector), persist/update it, run chain validation, resolve
-ownership, score risk, update status, and fire notifications/renewal tasks
-when thresholds are crossed. This is the function both the API endpoints
-and the scheduler call so behavior stays identical whether a scan is
-triggered manually or automatically.
+Persistence pipeline: take a NormalizedCertificate from any provider, validate it, upsert it, resolve its owner,
+derive status + risk, and alert on critical expiry. The job runner, API and scheduler all go through here so
+behaviour is identical however a scan is triggered.
 """
 import json
-from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Optional
 
+from cryptography import x509
+from cryptography.hazmat.primitives import serialization
 from sqlalchemy.orm import Session
 
 from app import models
 from app.config import settings
-from app.services.cert_scanner import scan_target, days_until_expiry, CertScanError
-from app.services.chain_validator import validate_chain, evaluate_weak_crypto
-from app.services.ownership_discovery import resolve_owner
-from app.services.risk_ml import score_certificate
+from app.ml.scoring import flags_from_findings, score_certificate
+from app.providers.base import NormalizedCertificate
+from app.providers.normalize import normalize_x509
 from app.services.notifications.slack import send_slack_alert
 from app.services.notifications.teams import send_teams_alert
-from app.services.notifications.jira import create_renewal_ticket
+from app.services.ownership_discovery import resolve_owner
+from app.timeutil import days_until, utcnow
+from app.validation.engine import ValidationReport, validate
+from app.validation.trust import load_roots
 
 
-def _get_or_create_owner(db: Session, owner_info: Dict[str, Any]) -> models.Owner:
+def validate_normalized(n: NormalizedCertificate, *, online: bool = True) -> ValidationReport:
+    return validate(
+        n, load_roots(settings.TRUST_STORE_EXTRA_PEM),
+        warn_days=settings.EXPIRY_WARNING_DAYS, critical_days=settings.EXPIRY_CRITICAL_DAYS,
+        check_revocation_online=online and settings.OCSP_ENABLED, ocsp_timeout=settings.NETWORK_TIMEOUT_SECONDS,
+    )
+
+
+def _get_or_create_owner(db: Session, owner_info: Dict) -> models.Owner:
     existing = db.query(models.Owner).filter(models.Owner.name == owner_info["name"]).first()
     if existing:
         return existing
@@ -33,85 +41,67 @@ def _get_or_create_owner(db: Session, owner_info: Dict[str, Any]) -> models.Owne
     return owner
 
 
-def _upsert_certificate(db: Session, data: Dict[str, Any]) -> models.Certificate:
-    existing = db.query(models.Certificate).filter(
-        models.Certificate.source_ref == data.get("source_ref")
-    ).first()
+def _chain_pem(n: NormalizedCertificate) -> Optional[str]:
+    if not n.chain_der:
+        return None
+    return b"".join(x509.load_der_x509_certificate(d).public_bytes(serialization.Encoding.PEM) for d in n.chain_der).decode()
 
-    if existing:
-        for k, v in data.items():
-            if hasattr(existing, k) and k not in ("id",):
-                setattr(existing, k, v)
-        existing.last_scanned_at = datetime.utcnow()
-        cert = existing
-    else:
-        allowed = {c.name for c in models.Certificate.__table__.columns}
-        clean = {k: v for k, v in data.items() if k in allowed}
-        clean["last_scanned_at"] = datetime.utcnow()
-        cert = models.Certificate(**clean)
+
+def _upsert(db: Session, n: NormalizedCertificate) -> models.Certificate:
+    source = models.SourceType(n.provider)
+    cert = (db.query(models.Certificate)
+            .filter(models.Certificate.source == source, models.Certificate.source_ref == n.source_ref).first())
+    if cert is None:
+        cert = models.Certificate(source=source, source_ref=n.source_ref, common_name=n.common_name)
         db.add(cert)
-
+    cert.common_name = n.common_name
+    cert.fingerprint_sha256 = n.fingerprint_sha256
+    cert.subject, cert.issuer, cert.serial_number = n.subject, n.issuer, n.serial_number
+    cert.signature_algorithm = n.signature_algorithm
+    cert.key_algorithm, cert.key_size = n.key_algorithm, n.key_size
+    cert.not_before, cert.not_after = n.not_before, n.not_after
+    cert.san_list = json.dumps(n.san_dns + n.san_ips)
+    cert.is_wildcard = n.is_wildcard
+    cert.expected_hostname = n.expected_hostname
+    cert.chain_pem = _chain_pem(n) or cert.chain_pem
+    if n.environment:
+        cert.environment = n.environment
+    cert.last_scanned_at = utcnow()
     db.flush()
     return cert
 
 
-def process_discovered_certificate(
-    db: Session,
-    raw: Dict[str, Any],
-    k8s_annotations: Optional[Dict[str, str]] = None,
-    repo_path: Optional[str] = None,
-) -> models.Certificate:
-    """Full pipeline for one discovered certificate dict (from any source)."""
-    cert = _upsert_certificate(db, raw)
-
-    # --- Ownership resolution ---
-    owner_info = resolve_owner(
-        k8s_annotations=k8s_annotations or raw.get("k8s_annotations"),
-        repo_path=repo_path,
-        file_glob_hint=cert.common_name,
-    )
-    if owner_info:
-        owner = _get_or_create_owner(db, owner_info)
-        cert.owner_id = owner.id
-
-    # --- Status + risk scoring ---
-    _rescore(db, cert)
-
-    db.commit()
-    db.refresh(cert)
-    return cert
+def apply_report(db: Session, cert: models.Certificate, report: ValidationReport) -> None:
+    """Store the validation outcome on the certificate and as a history row; derive status + risk."""
+    cert.chain_valid = report.chain_valid
+    cert.chain_depth = report.chain_depth or cert.chain_depth
+    if report.revoked is not None:  # keep the last known answer when revocation could not be re-checked
+        cert.revoked = report.revoked
+        cert.revocation_check_method = report.revocation_method
+    cert.last_validated_at = utcnow()
+    findings = json.dumps(report.findings_as_dicts())
+    latest = (db.query(models.ValidationResult).filter_by(certificate_id=cert.id)
+              .order_by(models.ValidationResult.checked_at.desc()).first())
+    if latest is None or latest.findings != findings or latest.overall != report.overall:  # history = changes only
+        db.add(models.ValidationResult(
+            certificate_id=cert.id, overall=report.overall, chain_valid=report.chain_valid, revoked=report.revoked,
+            findings=findings))
+    _set_status_and_risk(db, cert, report)
 
 
-def scan_and_process_network_target(db: Session, target: str) -> models.Certificate:
-    raw = scan_target(target)  # raises CertScanError on failure - caller handles
-    host, _, port = target.partition(":")
-    port = int(port) if port else 443
-
-    chain_info = validate_chain(host, port)
-    raw["chain_valid"] = chain_info.get("chain_valid")
-    if chain_info.get("revocation"):
-        raw["revoked"] = chain_info["revocation"].get("revoked")
-        raw["revocation_check_method"] = "OCSP" if chain_info["revocation"].get("checked") else "none"
-
-    raw["source"] = models.SourceType.NETWORK_SCAN
-
-    log = models.ScanLog(target=target, success=True, message=json.dumps(chain_info, default=str))
-    db.add(log)
-
-    return process_discovered_certificate(db, raw)
-
-
-def _rescore(db: Session, cert: models.Certificate):
-    """Recompute status + ML risk score/tier for a certificate and persist it."""
-    now = datetime.utcnow()
-    d = days_until_expiry(cert.not_after) if cert.not_after else None
-
+def _set_status_and_risk(db: Session, cert: models.Certificate, report: Optional[ValidationReport] = None) -> None:
+    d = days_until(cert.not_after)
+    has = (lambda c: report.has(c)) if report else (lambda c: False)
     if cert.revoked:
         cert.status = models.CertStatus.REVOKED
-    elif cert.chain_valid is False:
-        cert.status = models.CertStatus.INVALID_CHAIN
     elif d is not None and d < 0:
         cert.status = models.CertStatus.EXPIRED
+    elif cert.chain_valid is False:
+        cert.status = models.CertStatus.INVALID_CHAIN
+    elif has("hostname_mismatch"):
+        cert.status = models.CertStatus.HOSTNAME_MISMATCH
+    elif has("weak_key") or has("weak_signature"):
+        cert.status = models.CertStatus.WEAK_CRYPTO
     elif d is not None and d <= settings.EXPIRY_WARNING_DAYS:
         cert.status = models.CertStatus.EXPIRING_SOON
     elif d is not None:
@@ -119,13 +109,19 @@ def _rescore(db: Session, cert: models.Certificate):
     else:
         cert.status = models.CertStatus.UNKNOWN
 
-    score = score_certificate(cert)
+    flags = None
+    if report is not None:
+        flags = flags_from_findings(report.findings_as_dicts())
+    score = score_certificate(db, cert, flags)
     cert.risk_score = score["risk_score"]
-    cert.risk_tier = models.RiskTier(score["risk_tier"])
-    cert.predicted_renewal_delay_days = score["predicted_renewal_delay_days"]
+    cert.risk_tier = models.RiskTier(score["tier"])
+    cert.predicted_renewal_delay_days = None  # the old "renewal delay" regressor was trained on a made-up target; removed
     cert.predicted_outage_impact = score["predicted_outage_impact"]
 
-    # --- Alerting on critical thresholds ---
+
+def _alert_if_critical(cert: models.Certificate) -> None:
+    """Alerts only from scan/discovery runs, not from the hourly re-validation (avoids hourly spam)."""
+    d = days_until(cert.not_after)
     if d is not None and d <= settings.EXPIRY_CRITICAL_DAYS:
         msg = (f":rotating_light: Certificate *{cert.common_name}* expires in {d} day(s) "
                f"(risk tier: {cert.risk_tier.value}). Source: {cert.source_ref}")
@@ -133,8 +129,42 @@ def _rescore(db: Session, cert: models.Certificate):
         send_teams_alert(msg)
 
 
-def rescore_certificate(db: Session, cert: models.Certificate):
-    _rescore(db, cert)
+def process_normalized(db: Session, n: NormalizedCertificate) -> models.Certificate:
+    """Validate + persist one discovered certificate. Commits."""
+    report = validate_normalized(n)
+    cert = _upsert(db, n)
+    owner_info = resolve_owner(k8s_annotations=n.extras.get("k8s_annotations"), file_glob_hint=cert.common_name)
+    if owner_info:
+        cert.owner_id = _get_or_create_owner(db, owner_info).id
+    apply_report(db, cert, report)
+    _alert_if_critical(cert)
     db.commit()
     db.refresh(cert)
     return cert
+
+
+def normalized_from_row(cert: models.Certificate) -> NormalizedCertificate:
+    """Rebuild a NormalizedCertificate from stored data so validation can be re-run without network access."""
+    if cert.chain_pem:
+        chain = x509.load_pem_x509_certificates(cert.chain_pem.encode())
+        n = normalize_x509(chain[0], provider=cert.source.value, source_ref=cert.source_ref or "", chain=chain,
+                           environment=cert.environment, expected_hostname=cert.expected_hostname)
+        return n
+    sans = json.loads(cert.san_list) if cert.san_list else []
+    return NormalizedCertificate(
+        provider=cert.source.value, source_ref=cert.source_ref or "", common_name=cert.common_name,
+        not_before=cert.not_before, not_after=cert.not_after, key_algorithm=cert.key_algorithm,
+        key_size=cert.key_size, san_dns=sans, environment=cert.environment, expected_hostname=cert.expected_hostname)
+
+
+def revalidate_certificate(db: Session, cert: models.Certificate, *, online: bool = False) -> models.Certificate:
+    """Re-run validation from stored data (offline by default, so no OCSP traffic and no alerts)."""
+    report = validate_normalized(normalized_from_row(cert), online=online)
+    apply_report(db, cert, report)
+    db.commit()
+    db.refresh(cert)
+    return cert
+
+
+def rescore_certificate(db: Session, cert: models.Certificate) -> models.Certificate:
+    return revalidate_certificate(db, cert)

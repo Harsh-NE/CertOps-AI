@@ -1,0 +1,48 @@
+# Local renewal lab: a real ACME server (Pebble), its challenge mock, and Vault in dev mode. TEST ONLY.
+#   docker compose -f docker-compose.renewal-lab.yml up -d
+# Dev-mode Vault keeps data in memory and uses a fixed root token; Pebble issues certificates no browser trusts.
+name: certops-renewal-lab
+services:
+  pebble:
+    image: ghcr.io/letsencrypt/pebble:latest
+    command: -config /test/config/pebble-config.json -strict -dnsserver 10.30.50.3:8053
+    environment:
+      PEBBLE_VA_NOSLEEP: "1"
+      PEBBLE_WFE_NONCEREJECT: "0"
+    ports:
+      - "14000:14000"   # ACME directory (https, self-signed)
+      - "15000:15000"   # management
+    networks:
+      acme:
+        ipv4_address: 10.30.50.2
+    depends_on:
+      - challtestsrv
+
+  challtestsrv:
+    image: ghcr.io/letsencrypt/pebble-challtestsrv:latest
+    # Answer every DNS query with this container, which also serves the HTTP-01 tokens on :5002
+    command: -defaultIPv6 "" -defaultIPv4 10.30.50.3
+    ports:
+      - "8055:8055"     # management API used by the platform's challenge solver
+    networks:
+      acme:
+        ipv4_address: 10.30.50.3
+
+  vault:
+    image: hashicorp/vault:latest
+    command: server -dev -dev-listen-address=0.0.0.0:8200
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: dev-root-token
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - "8200:8200"
+    networks:
+      acme:
+        ipv4_address: 10.30.50.4
+
+networks:
+  acme:
+    ipam:
+      config:
+        - subnet: 10.30.50.0/24

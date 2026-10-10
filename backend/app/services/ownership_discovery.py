@@ -17,9 +17,9 @@ degrades gracefully.
 """
 import os
 import re
-import subprocess
+from typing import Any, Dict, List, Optional
+
 import yaml
-from typing import Optional, Dict, Any, List
 
 
 def owner_from_k8s_annotations(annotations: Dict[str, str]) -> Optional[Dict[str, Any]]:

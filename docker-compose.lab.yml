@@ -1,0 +1,12 @@
+# Overlay that lets the containerised backend scan the local lab (python -m app.devtools.lab --bind 0.0.0.0
+# --advertise-host host.docker.internal --out ../lab/certs --no-register). Lab only: relaxes the SSRF guard.
+#   docker compose -f docker-compose.yml -f docker-compose.lab.yml up --build
+services:
+  backend:
+    environment:
+      ALLOW_PRIVATE_TARGETS: "true"
+      TRUST_STORE_EXTRA_PEM: /lab/ca.pem
+    volumes:
+      - ./lab/certs:/lab:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

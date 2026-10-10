@@ -1,23 +1,35 @@
 # Python
+.venv/
 venv/
 __pycache__/
 *.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 *.db
-backend/certplatform.db
+
+# Models are produced by scripts (see README); not committed
 backend/app/ml_models/*.joblib
 
 # Node
 node_modules/
 frontend/dist/
 
-# Env
+# Env / secrets
 .env
 backend/.env
 
-# Lab certs (regenerate locally, don't commit private keys)
+# Lab certs (regenerate locally, never commit private keys)
 lab/certs/
 lab/nginx/rootCA.pem
 
 # OS
 .DS_Store
 SETUP.md
+frontend/coverage/
+backend/coverage.xml
+backend/coverage.json
+backend/junit.xml
+frontend/vitest.json
+backend/junit-integration.xml

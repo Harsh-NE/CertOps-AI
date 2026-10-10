@@ -1,10 +1,11 @@
 from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.database import get_db
 from app import models, schemas
-from app.auth import get_current_user
+from app.auth import get_current_user, require_role
+from app.database import get_db
 
 router = APIRouter(prefix="/api/owners", tags=["owners"])
 
@@ -15,7 +16,7 @@ def list_owners(db: Session = Depends(get_db), user=Depends(get_current_user)):
 
 
 @router.post("", response_model=schemas.OwnerOut)
-def create_owner(owner: schemas.OwnerOut, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def create_owner(owner: schemas.OwnerCreate, db: Session = Depends(get_db), user=Depends(require_role("operator"))):
     row = models.Owner(name=owner.name, team=owner.team, email=owner.email,
                         slack_channel=owner.slack_channel, source="manual")
     db.add(row)
@@ -25,7 +26,7 @@ def create_owner(owner: schemas.OwnerOut, db: Session = Depends(get_db), user=De
 
 
 @router.post("/{owner_id}/assign/{cert_id}", response_model=schemas.CertificateOut)
-def assign_owner(owner_id: str, cert_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def assign_owner(owner_id: str, cert_id: str, db: Session = Depends(get_db), user=Depends(require_role("operator"))):
     cert = db.query(models.Certificate).filter(models.Certificate.id == cert_id).first()
     owner = db.query(models.Owner).filter(models.Owner.id == owner_id).first()
     if not cert or not owner:

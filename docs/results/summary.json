@@ -1,0 +1,187 @@
+{
+ "generated_at": "2026-10-10T14:18:14+00:00",
+ "commit": "c608505",
+ "backend": {
+  "total": 195,
+  "passed": 188,
+  "failed": 0,
+  "skipped": 7,
+  "coverage_percent": 84.4,
+  "exit_code": 0,
+  "integration": {
+   "total": 7,
+   "passed": 7,
+   "failed": 0,
+   "skipped": 0,
+   "exit_code": 0
+  }
+ },
+ "frontend": {
+  "total": 100,
+  "passed": 100,
+  "failed": 0,
+  "coverage": {
+   "statements": 99.22,
+   "branches": 87.26,
+   "functions": 92,
+   "lines": 99.22
+  },
+  "exit_code": 0
+ },
+ "risk": {
+  "data": "SYNTHETIC (simulator v1.0); not real-world data",
+  "generated_at": "2026-10-10T14:18:08+00:00",
+  "sklearn": "1.5.1",
+  "label": "certificate causes a service problem within 30 days",
+  "n": 20000,
+  "seed": 7,
+  "split": {
+   "train": 12014,
+   "validation": 3973,
+   "test": 4013
+  },
+  "positive_rate": {
+   "train": 0.05743299483935409,
+   "validation": 0.05713566574377045,
+   "test": 0.05806130077248941,
+   "shifted_world_B": 0.1003
+  },
+  "thresholds_chosen_on_validation": {
+   "baseline_days_to_expiry": -27.672609974808438,
+   "logistic_regression": 0.10119510812886709,
+   "gradient_boosting": 0.21360978203083467
+  },
+  "test": {
+   "baseline_days_to_expiry": {
+    "precision": 0.5795454545454546,
+    "recall": 0.43776824034334766,
+    "f1": 0.49877750611246946,
+    "roc_auc": 0.6942957058836888,
+    "pr_auc": 0.4395102112218937,
+    "flagged_share": 0.04385746324445552
+   },
+   "logistic_regression": {
+    "precision": 0.18863049095607234,
+    "recall": 0.3133047210300429,
+    "f1": 0.23548387096774193,
+    "roc_auc": 0.748924767808888,
+    "pr_auc": 0.1615390852581943,
+    "flagged_share": 0.09643658111138799,
+    "brier": 0.05225970524175342
+   },
+   "gradient_boosting": {
+    "precision": 0.5964912280701754,
+    "recall": 0.43776824034334766,
+    "f1": 0.504950495049505,
+    "roc_auc": 0.8627898131117014,
+    "pr_auc": 0.5684432874368214,
+    "flagged_share": 0.04261151258410167,
+    "brier": 0.03484606364258917
+   }
+  },
+  "bootstrap_vs_baseline": {
+   "logistic_regression": {
+    "roc_auc_delta_95ci": [
+     0.007586548160981033,
+     0.10338306425677285
+    ],
+    "pr_auc_delta_95ci": [
+     -0.3496580714343416,
+     -0.1995342808118582
+    ]
+   },
+   "gradient_boosting": {
+    "roc_auc_delta_95ci": [
+     0.12655586826091464,
+     0.2139347649738081
+    ],
+    "pr_auc_delta_95ci": [
+     0.09098841569408836,
+     0.16495095199565782
+    ]
+   }
+  },
+  "shifted_world_B": {
+   "baseline_days_to_expiry": {
+    "precision": 0.6008230452674898,
+    "recall": 0.43668993020937186,
+    "f1": 0.5057736720554272,
+    "roc_auc": 0.6949535964741099,
+    "pr_auc": 0.4471003013929095,
+    "flagged_share": 0.0729
+   },
+   "logistic_regression": {
+    "precision": 0.2698412698412698,
+    "recall": 0.3389830508474576,
+    "f1": 0.30048608042421565,
+    "roc_auc": 0.7243041354983621,
+    "pr_auc": 0.24315803839260858,
+    "flagged_share": 0.126,
+    "brier": 0.08603246111728566
+   },
+   "gradient_boosting": {
+    "precision": 0.6888519134775375,
+    "recall": 0.4127617148554337,
+    "f1": 0.516209476309227,
+    "roc_auc": 0.8373800461458795,
+    "pr_auc": 0.5782004285561846,
+    "flagged_share": 0.0601,
+    "brier": 0.062455596542279966
+   }
+  },
+  "permutation_importance_top": [
+   {
+    "feature": "days_to_expiry",
+    "roc_auc_drop": 0.21908145423166875
+   },
+   {
+    "feature": "hostname_mismatch",
+    "roc_auc_drop": 0.05198231032994967
+   },
+   {
+    "feature": "chain_invalid",
+    "roc_auc_drop": 0.02862172718395888
+   },
+   {
+    "feature": "issuer_type",
+    "roc_auc_drop": 0.019488384767354594
+   },
+   {
+    "feature": "weak_signature",
+    "roc_auc_drop": 0.010897540704407582
+   },
+   {
+    "feature": "source",
+    "roc_auc_drop": 0.00875014192610748
+   },
+   {
+    "feature": "prior_attempts",
+    "roc_auc_drop": 0.005881531439471299
+   },
+   {
+    "feature": "auto_renew",
+    "roc_auc_drop": 0.004920862002407022
+   }
+  ]
+ },
+ "agent_scripted": {
+  "backend": "scripted",
+  "generated_at": "2026-10-10T14:18:14+00:00",
+  "model": null,
+  "cases_total": 28,
+  "cases_counted": 27,
+  "cases_excluded": [
+   "gr-03"
+  ],
+  "passed": 27,
+  "success_rate": 1.0,
+  "by_category": {
+   "inventory": "8/8",
+   "detail": "3/3",
+   "root-cause": "6/6",
+   "renewal": "8/8",
+   "guardrails": "2/2"
+  },
+  "failures": []
+ }
+}

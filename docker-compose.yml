@@ -1,31 +1,42 @@
-version: "3.8"
 services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: certadmin
-      POSTGRES_PASSWORD: certpass
-      POSTGRES_DB: certplatform
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:-certops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-certops}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-certops} -d ${POSTGRES_DB:-certops}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    # No published port: only the backend container can reach the database.
 
   backend:
     build: ./backend
     env_file:
-      - backend/.env
+      - .env
     environment:
-      DATABASE_URL: postgresql+psycopg2://certadmin:certpass@db:5432/certplatform
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-certops}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-certops}
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     ports:
       - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   frontend:
     build: ./frontend
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
       - "3000:80"
 

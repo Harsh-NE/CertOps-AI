@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import api from '../api.js'
 import { ShieldCheck } from 'lucide-react'
 
@@ -8,6 +8,11 @@ export default function Login({ onLogin }) {
   const [isRegister, setIsRegister] = useState(false)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [canRegister, setCanRegister] = useState(false)
+
+  useEffect(() => {
+    api.get('/health').then((r) => setCanRegister(!!r.data.registration_enabled)).catch(() => {})
+  }, [])
 
   async function submit(e) {
     e.preventDefault()
@@ -41,7 +46,7 @@ export default function Login({ onLogin }) {
           <h1 className="text-lg font-semibold">Cert Lifecycle Platform</h1>
         </div>
         <p className="text-sm text-muted">
-          {isRegister ? 'Create the first admin account.' : 'Sign in to continue.'}
+          {isRegister ? 'Create a read-only account.' : 'Sign in to continue.'}
         </p>
         <input
           className="w-full bg-panel2 border border-border rounded-lg px-3 py-2 text-sm outline-none focus:border-accent"
@@ -63,13 +68,15 @@ export default function Login({ onLogin }) {
         >
           {loading ? 'Please wait…' : isRegister ? 'Create account' : 'Sign in'}
         </button>
-        <button
+        {canRegister && (
+          <button
           type="button"
           onClick={() => setIsRegister(!isRegister)}
           className="w-full text-xs text-muted hover:text-accent transition"
         >
-          {isRegister ? 'Already have an account? Sign in' : 'First time? Create an account'}
+          {isRegister ? 'Already have an account? Sign in' : 'Need an account? Sign up'}
         </button>
+        )}
       </form>
     </div>
   )
