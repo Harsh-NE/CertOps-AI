@@ -13,7 +13,7 @@ Operating thresholds were chosen on the validation set; all metrics below are on
 
 Gradient boosting minus baseline, bootstrap 95% CI: ROC-AUC +0.127 .. +0.214, PR-AUC +0.091 .. +0.165.
 
-### Same models on a differently-configured simulated fleet (world B, distribution shift; positive rate 0.100)
+### Same models on a differently-configured simulated fleet (world B: distribution shift; positive rate 0.100)
 | model | precision | recall | f1 | roc_auc | pr_auc | brier |
 |---|---|---|---|---|---|---|
 | baseline_days_to_expiry | 0.601 | 0.437 | 0.506 | 0.695 | 0.447 | n/a |

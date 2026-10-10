@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import api from './api.js'
 
-const AuthContext = createContext({ user: null, isOperator: false })
+export const AuthContext = createContext({ user: null, isOperator: false })
 
 /** Loads /auth/me once so the UI can hide actions the server would refuse anyway (the server stays the authority). */
 export function AuthProvider({ token, children }) {

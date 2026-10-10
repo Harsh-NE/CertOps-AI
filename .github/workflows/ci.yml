@@ -1,0 +1,142 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (ruff, pytest, coverage, audit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - name: Install (pinned; fails if constraints.txt disagrees with requirements)
+        run: pip install -r requirements-dev.txt -c constraints.txt
+      - name: Lint
+        run: ruff check .
+      - name: Tests with coverage (fails under 80%)
+        run: pytest --cov=app --cov-report=term --cov-report=xml --cov-fail-under=80 --junitxml=junit.xml
+      - name: Dependency vulnerabilities
+        run: pip-audit -r requirements.txt --no-deps --disable-pip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-test-results
+          path: |
+            backend/coverage.xml
+            backend/junit.xml
+
+  migrations:
+    name: Migrations and the plan-execution race on PostgreSQL
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: pgtest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_URL: postgresql+psycopg2://postgres:pgtest@localhost:5432/postgres
+      PG_TEST_URL: postgresql+psycopg2://postgres:pgtest@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt -c constraints.txt
+      - name: Apply all migrations to an empty PostgreSQL
+        run: alembic upgrade head
+      - name: Models and migrations agree
+        run: alembic check
+      - name: A single approved plan executes exactly once under concurrency
+        run: pytest tests/integration/test_plan_race_postgres.py -q
+
+  integration-renewal:
+    name: ACME renewal against Pebble and Vault (local test CA)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt -c constraints.txt
+      - name: Start the renewal lab
+        run: docker compose -f ../docker-compose.renewal-lab.yml up -d
+      - name: Wait for Pebble and Vault
+        run: |
+          for i in $(seq 1 30); do
+            curl -skf https://localhost:14000/dir >/dev/null && curl -sf http://localhost:8200/v1/sys/health >/dev/null && exit 0
+            sleep 2
+          done
+          docker compose -f ../docker-compose.renewal-lab.yml logs
+          exit 1
+      - name: Real issuance, Vault storage, failure -> root-cause analysis
+        run: RENEWAL_INTEGRATION=1 pytest tests/integration/test_acme_pebble.py -q
+      - name: Stop the lab
+        if: always()
+        run: docker compose -f ../docker-compose.renewal-lab.yml down
+
+  frontend:
+    name: Frontend (tests, coverage, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Component and unit tests with coverage
+        run: npm run test:coverage
+      - name: Production build
+        run: npm run build
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-coverage
+          path: frontend/coverage
+
+  docker-build:
+    name: Docker images build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Backend image (also trains the synthetic-data risk model)
+        run: docker build ./backend
+      - name: Frontend image
+        run: docker build ./frontend

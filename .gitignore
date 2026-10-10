@@ -27,3 +27,9 @@ lab/nginx/rootCA.pem
 # OS
 .DS_Store
 SETUP.md
+frontend/coverage/
+backend/coverage.xml
+backend/coverage.json
+backend/junit.xml
+frontend/vitest.json
+backend/junit-integration.xml

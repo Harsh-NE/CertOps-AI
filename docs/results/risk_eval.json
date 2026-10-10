@@ -1,6 +1,6 @@
 {
   "data": "SYNTHETIC (simulator v1.0); not real-world data",
-  "generated_at": "2026-10-10T11:12:03+00:00",
+  "generated_at": "2026-10-10T14:18:08+00:00",
   "sklearn": "1.5.1",
   "label": "certificate causes a service problem within 30 days",
   "n": 20000,

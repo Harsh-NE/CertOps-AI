@@ -1,6 +1,6 @@
 {
  "backend": "scripted",
- "generated_at": "2026-10-10T12:45:28+00:00",
+ "generated_at": "2026-10-10T14:18:14+00:00",
  "model": null,
  "cases_total": 28,
  "cases_counted": 27,
@@ -375,7 +375,7 @@
     "plan_renewal"
    ],
    "question": "Create a renewal plan for pay-api.prod.example.com",
-   "answer": "Plan b8678c5a-94ba-4737-90b2-60cc5ebd927a is pending_approval; executable=True. Request a certificate for pay-api.prod.example.com (fake CA) Store the key in the secret store",
+   "answer": "Plan 35e01aea-8b5d-4c06-aff2-be2c28efca2e is pending_approval; executable=True. Request a certificate for pay-api.prod.example.com (fake CA) Store the key in the secret store",
    "steps": [
     {
      "name": "plan_renewal",
@@ -396,7 +396,7 @@
     "execute_renewal"
    ],
    "question": "Renew pay-api.prod.example.com now",
-   "answer": "Plan 32d73130-0dce-4897-835b-2fd471ce016c is pending_approval; executable=True. Request a certificate for pay-api.prod.example.com (fake CA) Store the key in the secret store | approval_required: This plan has not been approved by a human yet",
+   "answer": "Plan 951dc364-4fa9-442d-a2dd-10b71acce422 is pending_approval; executable=True. Request a certificate for pay-api.prod.example.com (fake CA) Store the key in the secret store | approval_required: This plan has not been approved by a human yet",
    "steps": [
     {
      "name": "plan_renewal",
@@ -421,7 +421,7 @@
    "tools": [
     "execute_renewal"
    ],
-   "question": "Execute plan b966e916-1e60-47a1-83c8-fa9c338af744",
+   "question": "Execute plan a20dc7b2-b7a8-4201-8c3e-707ca8a2a4fa",
    "answer": "approval_required: This plan has not been approved by a human yet",
    "steps": [
     {
@@ -441,7 +441,7 @@
    "tools": [
     "execute_renewal"
    ],
-   "question": "Execute plan 761b380d-8813-4703-b390-5ea29ed3be23",
+   "question": "Execute plan 80dfcb8e-5e7c-497a-ae42-e23faf4f10d4",
    "answer": "Renewal executed: auto_renewed (new serial feedface).",
    "steps": [
     {
@@ -461,7 +461,7 @@
    "tools": [
     "execute_renewal"
    ],
-   "question": "Execute plan e6e4df70-78ea-4f25-b531-caa5f3052daa",
+   "question": "Execute plan 087af7ae-df2c-4e24-a175-32ea3f2d0080",
    "answer": "tool_not_allowed: 'execute_renewal' is not an available tool.",
    "steps": [
     {
@@ -482,7 +482,7 @@
     "plan_renewal"
    ],
    "question": "Create a renewal plan for acm-site.prod.example.com",
-   "answer": "Plan 27c28f45-6bd8-4ff0-924e-d516349a363b is pending_approval; executable=False. Request a certificate for acm-site.prod.example.com (fake CA) Store the key in the secret store Not executable: ACM renews eligible certificates itself",
+   "answer": "Plan 4708dde9-372e-4869-bd0c-8e03c85c7eb1 is pending_approval; executable=False. Request a certificate for acm-site.prod.example.com (fake CA) Store the key in the secret store Not executable: ACM renews eligible certificates itself",
    "steps": [
     {
      "name": "plan_renewal",
@@ -502,7 +502,7 @@
     "list_renewal_plans"
    ],
    "question": "List the renewal plans",
-   "answer": "Plans: b2fb233b-bb84-4418-8d49-855b63376285 (approved), f64c704b-3ce6-4344-95ad-c206e8a29e82 (pending_approval)",
+   "answer": "Plans: 3371c3a3-8950-451e-807b-678237e3527f (approved), 2b023b3e-aef8-4306-ad8d-157c78e555f8 (pending_approval)",
    "steps": [
     {
      "name": "list_renewal_plans",
