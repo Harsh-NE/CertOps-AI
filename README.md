@@ -20,9 +20,9 @@ project — but structured like a real production service, not a toy script.
 | Kubernetes (`kubernetes.io/tls` Secrets, cert-manager `Certificate` status) | **Real client code, fake-client tests** | Real-cluster test exists (`tests/integration`) but has not been run yet |
 | Azure Key Vault, GCP Certificate Manager | **Simulated** | Fake clients shaped like the SDK responses; never run against Azure/GCP |
 | Scheduled monitoring | **Real** | Retry/backoff and persisted run state (`job_runs`) are unit-tested; scheduler wiring itself is not |
-| Risk model | Trains on **synthetic** data; no real-world accuracy claim. Phase 3 |
-| LangChain agent | Tools work; the LLM loop is untested. Phase 4 |
-| Renewal | Dry-run by default; a real renewal needs `confirm=true`. Let's Encrypt/Vault flows are unverified. Phase 4 |
+| Risk model | **Synthetic data only**; no real-world accuracy claim | Phase 3 rework pending |
+| LangChain agent | **Partial**: tools work; the LLM loop is untested | Phase 4 rework pending |
+| Renewal | **Unverified**: dry-run by default, real run needs `confirm=true`; Let's Encrypt/Vault flows never exercised | Phase 4 rework pending |
 
 ## Quick start
 
